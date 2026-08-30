@@ -1,0 +1,8 @@
+.env
+__pycache__/
+*.py[cod]
+.pytest_cache/
+agent_service/.pytest_cache/
+domain_service/target/
+domain_service/.mvn/repository/
+.DS_Store
