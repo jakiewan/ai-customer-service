@@ -1,0 +1,16 @@
+spring:
+  application:
+    name: globalcare-domain-service
+  jackson:
+    property-naming-strategy: SNAKE_CASE
+server:
+  port: 8081
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      probes:
+        enabled: true

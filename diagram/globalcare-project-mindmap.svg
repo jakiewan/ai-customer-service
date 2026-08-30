@@ -1,0 +1,165 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1900 1250" role="img" aria-labelledby="title desc">
+  <title id="title">GlobalCare Web MVP 项目思维导图</title>
+  <desc id="desc">展示 GlobalCare Web 售后智能客服 Agent 的范围、架构、业务逻辑、代码分层、接口、数据、测试和实施顺序。</desc>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&amp;family=Noto+Sans+SC:wght@400;500;600;700&amp;display=swap');
+    text { font-family: 'JetBrains Mono','Noto Sans SC','PingFang SC',sans-serif; }
+    .title { fill:#f8fafc; font-size:20px; font-weight:700; }
+    .subtitle { fill:#94a3b8; font-size:10px; }
+    .main { fill:#f8fafc; font-size:17px; font-weight:700; text-anchor:middle; }
+    .main-sub { fill:#bfdbfe; font-size:10px; text-anchor:middle; }
+    .branch { fill:#f8fafc; font-size:12px; font-weight:700; text-anchor:middle; }
+    .node { fill:#e2e8f0; font-size:10px; font-weight:500; text-anchor:middle; }
+    .node-sub { fill:#94a3b8; font-size:8px; text-anchor:middle; }
+    .legend { fill:#94a3b8; font-size:8px; }
+  </style>
+  <defs>
+    <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+      <path d="M40 0H0V40" fill="none" stroke="#1e293b" stroke-width=".5"/>
+    </pattern>
+    <filter id="glow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="8" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+
+  <rect width="1900" height="1250" fill="#0f172a"/>
+  <rect width="1900" height="1250" fill="url(#grid)"/>
+  <text x="36" y="42" class="title">GlobalCare Web · MVP 开工思维导图</text>
+  <text x="36" y="62" class="subtitle">目标：把 Agent 主链路做深，不做完整客服平台</text>
+
+  <!-- branch connectors -->
+  <path d="M820 560 C670 500, 590 290, 420 250" fill="none" stroke="#22d3ee" stroke-width="2.4"/>
+  <path d="M820 600 C630 620, 560 600, 420 570" fill="none" stroke="#34d399" stroke-width="2.4"/>
+  <path d="M820 650 C640 770, 560 880, 430 940" fill="none" stroke="#fb923c" stroke-width="2.4"/>
+  <path d="M1080 555 C1240 430, 1320 250, 1500 220" fill="none" stroke="#34d399" stroke-width="2.4"/>
+  <path d="M1080 600 C1240 610, 1320 610, 1490 600" fill="none" stroke="#a78bfa" stroke-width="2.4"/>
+  <path d="M1080 650 C1250 780, 1340 890, 1490 940" fill="none" stroke="#a78bfa" stroke-width="2.4"/>
+  <path d="M950 715 C950 840, 950 920, 950 1030" fill="none" stroke="#fbbf24" stroke-width="2.4"/>
+
+  <!-- main node -->
+  <rect x="820" y="530" width="260" height="170" rx="20" fill="#0f172a" filter="url(#glow)"/>
+  <rect x="820" y="530" width="260" height="170" rx="20" fill="rgba(59,130,246,.30)" stroke="#60a5fa" stroke-width="2"/>
+  <text x="950" y="582" class="main">GlobalCare Web MVP</text>
+  <text x="950" y="607" class="main">售后 Case 智能受理 Agent</text>
+  <text x="950" y="638" class="main-sub">Vue 3 · FastAPI · LangChain · LangGraph</text>
+  <text x="950" y="658" class="main-sub">pgvector · MCP · MiniMax-M3</text>
+  <text x="950" y="680" class="main-sub">Case Draft 是 Agent 终点</text>
+
+  <!-- upper left: MVP scope -->
+  <rect x="150" y="155" width="270" height="72" rx="12" fill="#0f172a"/>
+  <rect x="150" y="155" width="270" height="72" rx="12" fill="rgba(8,51,68,.40)" stroke="#22d3ee" stroke-width="1.5"/>
+  <text x="285" y="185" class="branch">1. MVP 范围与边界</text>
+  <text x="285" y="205" class="node-sub">小闭环，不是完整客服平台</text>
+  <path d="M285 227 V280" fill="none" stroke="#22d3ee" stroke-width="1.3"/>
+  <path d="M285 280 H105 M285 280 H285 M285 280 H465" fill="none" stroke="#22d3ee" stroke-width="1.3"/>
+  <g>
+    <rect x="35" y="300" width="140" height="58" rx="9" fill="#0f172a"/><rect x="35" y="300" width="140" height="58" rx="9" fill="rgba(8,51,68,.32)" stroke="#22d3ee"/>
+    <text x="105" y="326" class="node">文字网页聊天</text><text x="105" y="344" class="node-sub">Vue 3 + JavaScript</text>
+    <rect x="215" y="300" width="140" height="58" rx="9" fill="#0f172a"/><rect x="215" y="300" width="140" height="58" rx="9" fill="rgba(8,51,68,.32)" stroke="#22d3ee"/>
+    <text x="285" y="326" class="node">模拟政策与数据</text><text x="285" y="344" class="node-sub">CN / MY，订单市场即售后市场</text>
+    <rect x="395" y="300" width="140" height="58" rx="9" fill="#0f172a"/><rect x="395" y="300" width="140" height="58" rx="9" fill="rgba(8,51,68,.32)" stroke="#22d3ee"/>
+    <text x="465" y="326" class="node">明确不做</text><text x="465" y="344" class="node-sub">语音、工单、n8n、坐席台</text>
+  </g>
+
+  <!-- middle left: business logic -->
+  <rect x="130" y="505" width="290" height="72" rx="12" fill="#0f172a"/>
+  <rect x="130" y="505" width="290" height="72" rx="12" fill="rgba(6,78,59,.40)" stroke="#34d399" stroke-width="1.5"/>
+  <text x="275" y="535" class="branch">2. 客服业务逻辑</text>
+  <text x="275" y="555" class="node-sub">按意图分流，先解决再受理</text>
+  <path d="M275 577 V635" fill="none" stroke="#34d399" stroke-width="1.3"/>
+  <path d="M275 635 H95 M275 635 H275 M275 635 H455" fill="none" stroke="#34d399" stroke-width="1.3"/>
+  <g>
+    <rect x="20" y="655" width="150" height="82" rx="9" fill="#0f172a"/><rect x="20" y="655" width="150" height="82" rx="9" fill="rgba(6,78,59,.32)" stroke="#34d399"/>
+    <text x="95" y="682" class="node">故障咨询</text><text x="95" y="701" class="node-sub">强制重启、充电、</text><text x="95" y="716" class="node-sub">排查建议 → RESOLVED</text>
+    <rect x="200" y="655" width="150" height="82" rx="9" fill="#0f172a"/><rect x="200" y="655" width="150" height="82" rx="9" fill="rgba(6,78,59,.32)" stroke="#34d399"/>
+    <text x="275" y="682" class="node">维修进度</text><text x="275" y="701" class="node-sub">MCP 查询 Case/订单</text><text x="275" y="716" class="node-sub">直接返回当前状态</text>
+    <rect x="380" y="655" width="150" height="82" rx="9" fill="#0f172a"/><rect x="380" y="655" width="150" height="82" rx="9" fill="rgba(6,78,59,.32)" stroke="#34d399"/>
+    <text x="455" y="682" class="node">申请售后</text><text x="455" y="701" class="node-sub">补订单/SN → 校验</text><text x="455" y="716" class="node-sub">创建或复用 Case Draft</text>
+  </g>
+  <rect x="140" y="765" width="270" height="54" rx="9" fill="#0f172a"/>
+  <rect x="140" y="765" width="270" height="54" rx="9" fill="rgba(136,19,55,.32)" stroke="#fb7185"/>
+  <text x="275" y="789" class="node">无证据 / 高风险</text><text x="275" y="806" class="node-sub">human_required，不承诺、不自动转人工</text>
+
+  <!-- bottom left: API -->
+  <rect x="150" y="890" width="280" height="72" rx="12" fill="#0f172a"/>
+  <rect x="150" y="890" width="280" height="72" rx="12" fill="rgba(251,146,60,.20)" stroke="#fb923c" stroke-width="1.5"/>
+  <text x="290" y="920" class="branch">3. 接口与前后端联调</text>
+  <text x="290" y="940" class="node-sub">Vue 只访问 FastAPI</text>
+  <path d="M290 962 V1010" fill="none" stroke="#fb923c" stroke-width="1.3"/>
+  <path d="M290 1010 H120 M290 1010 H290 M290 1010 H460" fill="none" stroke="#fb923c" stroke-width="1.3"/>
+  <g>
+    <rect x="45" y="1030" width="150" height="62" rx="9" fill="#0f172a"/><rect x="45" y="1030" width="150" height="62" rx="9" fill="rgba(251,146,60,.20)" stroke="#fb923c"/>
+    <text x="120" y="1056" class="node">聊天 SSE</text><text x="120" y="1075" class="node-sub">POST /messages/stream</text>
+    <rect x="215" y="1030" width="150" height="62" rx="9" fill="#0f172a"/><rect x="215" y="1030" width="150" height="62" rx="9" fill="rgba(251,146,60,.20)" stroke="#fb923c"/>
+    <text x="290" y="1056" class="node">会话 / 草稿查询</text><text x="290" y="1075" class="node-sub">GET conversation / draft</text>
+    <rect x="385" y="1030" width="150" height="62" rx="9" fill="#0f172a"/><rect x="385" y="1030" width="150" height="62" rx="9" fill="rgba(251,146,60,.20)" stroke="#fb923c"/>
+    <text x="460" y="1056" class="node">内部 Java 契约</text><text x="460" y="1075" class="node-sub">查询 + Case Draft API</text>
+  </g>
+
+  <!-- upper right: architecture & frameworks -->
+  <rect x="1480" y="130" width="300" height="72" rx="12" fill="#0f172a"/>
+  <rect x="1480" y="130" width="300" height="72" rx="12" fill="rgba(6,78,59,.40)" stroke="#34d399" stroke-width="1.5"/>
+  <text x="1630" y="160" class="branch">4. 架构与框架职责</text>
+  <text x="1630" y="180" class="node-sub">每层只有一个明确职责</text>
+  <path d="M1630 202 V255" fill="none" stroke="#34d399" stroke-width="1.3"/>
+  <path d="M1630 255 H1450 M1630 255 H1630 M1630 255 H1810" fill="none" stroke="#34d399" stroke-width="1.3"/>
+  <g>
+    <rect x="1375" y="275" width="150" height="76" rx="9" fill="#0f172a"/><rect x="1375" y="275" width="150" height="76" rx="9" fill="rgba(6,78,59,.32)" stroke="#34d399"/>
+    <text x="1450" y="302" class="node">FastAPI</text><text x="1450" y="321" class="node-sub">HTTP、SSE、DTO、</text><text x="1450" y="336" class="node-sub">Trace ID、Health</text>
+    <rect x="1555" y="275" width="150" height="76" rx="9" fill="#0f172a"/><rect x="1555" y="275" width="150" height="76" rx="9" fill="rgba(6,78,59,.32)" stroke="#34d399"/>
+    <text x="1630" y="302" class="node">LangGraph</text><text x="1630" y="321" class="node-sub">StateGraph、路由、</text><text x="1630" y="336" class="node-sub">Checkpoint、Guard</text>
+    <rect x="1735" y="275" width="150" height="76" rx="9" fill="#0f172a"/><rect x="1735" y="275" width="150" height="76" rx="9" fill="rgba(6,78,59,.32)" stroke="#34d399"/>
+    <text x="1810" y="302" class="node">LangChain</text><text x="1810" y="321" class="node-sub">MiniMax-M3、RAG、</text><text x="1810" y="336" class="node-sub">Structured Output</text>
+  </g>
+
+  <!-- middle right: code layers -->
+  <rect x="1470" y="480" width="320" height="72" rx="12" fill="#0f172a"/>
+  <rect x="1470" y="480" width="320" height="72" rx="12" fill="rgba(76,29,149,.40)" stroke="#a78bfa" stroke-width="1.5"/>
+  <text x="1630" y="510" class="branch">5. 后端代码分层</text>
+  <text x="1630" y="530" class="node-sub">可测试、可替换、避免单文件 Demo</text>
+  <path d="M1630 552 V610" fill="none" stroke="#a78bfa" stroke-width="1.3"/>
+  <path d="M1630 610 H1460 M1630 610 H1630 M1630 610 H1800" fill="none" stroke="#a78bfa" stroke-width="1.3"/>
+  <g>
+    <rect x="1385" y="630" width="150" height="74" rx="9" fill="#0f172a"/><rect x="1385" y="630" width="150" height="74" rx="9" fill="rgba(76,29,149,.32)" stroke="#a78bfa"/>
+    <text x="1460" y="657" class="node">api / application</text><text x="1460" y="676" class="node-sub">routers、schemas、</text><text x="1460" y="691" class="node-sub">conversation、draft service</text>
+    <rect x="1555" y="630" width="150" height="74" rx="9" fill="#0f172a"/><rect x="1555" y="630" width="150" height="74" rx="9" fill="rgba(76,29,149,.32)" stroke="#a78bfa"/>
+    <text x="1630" y="657" class="node">graph / rag / tools</text><text x="1630" y="676" class="node-sub">nodes、routes、</text><text x="1630" y="691" class="node-sub">retriever、MCP client</text>
+    <rect x="1725" y="630" width="150" height="74" rx="9" fill="#0f172a"/><rect x="1725" y="630" width="150" height="74" rx="9" fill="rgba(76,29,149,.32)" stroke="#a78bfa"/>
+    <text x="1800" y="657" class="node">infra / tests</text><text x="1800" y="676" class="node-sub">repositories、audit、</text><text x="1800" y="691" class="node-sub">unit、integration、e2e</text>
+  </g>
+
+  <!-- lower right: data & guard -->
+  <rect x="1460" y="870" width="330" height="72" rx="12" fill="#0f172a"/>
+  <rect x="1460" y="870" width="330" height="72" rx="12" fill="rgba(76,29,149,.40)" stroke="#a78bfa" stroke-width="1.5"/>
+  <text x="1625" y="900" class="branch">6. 数据、工具与 Guard</text>
+  <text x="1625" y="920" class="node-sub">事实、证据、权限三层分离</text>
+  <path d="M1625 942 V1000" fill="none" stroke="#a78bfa" stroke-width="1.3"/>
+  <path d="M1625 1000 H1445 M1625 1000 H1625 M1625 1000 H1805" fill="none" stroke="#a78bfa" stroke-width="1.3"/>
+  <g>
+    <rect x="1370" y="1020" width="150" height="72" rx="9" fill="#0f172a"/><rect x="1370" y="1020" width="150" height="72" rx="9" fill="rgba(76,29,149,.32)" stroke="#a78bfa"/>
+    <text x="1445" y="1047" class="node">PostgreSQL + pgvector</text><text x="1445" y="1066" class="node-sub">政策、Checkpoint、</text><text x="1445" y="1081" class="node-sub">Conversation、Audit</text>
+    <rect x="1550" y="1020" width="150" height="72" rx="9" fill="#0f172a"/><rect x="1550" y="1020" width="150" height="72" rx="9" fill="rgba(251,146,60,.20)" stroke="#fb923c"/>
+    <text x="1625" y="1047" class="node">FastMCP</text><text x="1625" y="1066" class="node-sub">只读工具、Schema、</text><text x="1625" y="1081" class="node-sub">超时、错误标准化</text>
+    <rect x="1730" y="1020" width="150" height="72" rx="9" fill="#0f172a"/><rect x="1730" y="1020" width="150" height="72" rx="9" fill="rgba(136,19,55,.32)" stroke="#fb7185"/>
+    <text x="1805" y="1047" class="node">Guardrails</text><text x="1805" y="1066" class="node-sub">证据校验、字段校验、</text><text x="1805" y="1081" class="node-sub">最大步骤、预算、审计</text>
+  </g>
+
+  <!-- bottom center: implementation plan -->
+  <rect x="760" y="1030" width="380" height="72" rx="12" fill="#0f172a"/>
+  <rect x="760" y="1030" width="380" height="72" rx="12" fill="rgba(120,53,15,.30)" stroke="#fbbf24" stroke-width="1.5"/>
+  <text x="950" y="1060" class="branch">7. 开工顺序与验证</text>
+  <text x="950" y="1080" class="node-sub">先 MVP 闭环，再逐步拓展</text>
+  <path d="M950 1102 V1140" fill="none" stroke="#fbbf24" stroke-width="1.3"/>
+  <g>
+    <rect x="600" y="1160" width="700" height="52" rx="10" fill="#0f172a"/>
+    <rect x="600" y="1160" width="700" height="52" rx="10" fill="rgba(120,53,15,.22)" stroke="#fbbf24"/>
+    <text x="950" y="1182" class="node">T1 状态/字段 → T2 政策库 → T3 Spring Boot Mock → T4 MCP → T5 LangGraph → T6 FastAPI → T7 Vue</text>
+    <text x="950" y="1200" class="node-sub">验证：Unit → Fake Model/MCP → HTTP 集成 → MiniMax Smoke → Golden Conversation</text>
+  </g>
+
+  <rect x="35" y="1145" width="450" height="70" rx="10" fill="rgba(30,41,59,.55)" stroke="#334155"/>
+  <text x="55" y="1170" class="legend">参考而不照抄</text>
+  <text x="55" y="1188" class="legend">LangGraph、Chatwoot、Rasa、Dify、Frappe Helpdesk：借鉴模式，不复制代码。</text>
+  <text x="55" y="1205" class="legend">不因标杆有 Redis/MQ/多 Agent 就扩大 MVP。</text>
+</svg>

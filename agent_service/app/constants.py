@@ -1,0 +1,93 @@
+from enum import StrEnum
+
+
+class Market(StrEnum):
+    CN = "CN"
+    MY = "MY"
+
+
+class Language(StrEnum):
+    ZH_CN = "zh-CN"
+    EN_MY = "en-MY"
+
+
+class Intent(StrEnum):
+    FAQ = "FAQ"
+    TROUBLESHOOTING = "TROUBLESHOOTING"
+    REPAIR_STATUS = "REPAIR_STATUS"
+    CASE_REQUEST = "CASE_REQUEST"
+    GENERAL = "GENERAL"
+
+
+class ConversationStatus(StrEnum):
+    AI_ACTIVE = "AI_ACTIVE"
+    CASE_DRAFT_CREATED = "CASE_DRAFT_CREATED"
+    AI_CANNOT_RESOLVE = "AI_CANNOT_RESOLVE"
+    COMPLETED = "COMPLETED"
+    FAILED = "FAILED"
+
+
+class AgentPhase(StrEnum):
+    AI_ACTIVE = "AI_ACTIVE"
+    COLLECTING_INFO = "COLLECTING_INFO"
+    CONTEXT_READY = "CONTEXT_READY"
+    RETRIEVING_POLICY = "RETRIEVING_POLICY"
+    QUERYING_BUSINESS_DATA = "QUERYING_BUSINESS_DATA"
+    BUILDING_CASE_DRAFT = "BUILDING_CASE_DRAFT"
+    VALIDATING_DRAFT = "VALIDATING_DRAFT"
+    CREATING_CASE_DRAFT = "CREATING_CASE_DRAFT"
+    CASE_DRAFT_CREATED = "CASE_DRAFT_CREATED"
+    AI_CANNOT_RESOLVE = "AI_CANNOT_RESOLVE"
+    COMPLETED = "COMPLETED"
+
+
+class CaseDraftStatus(StrEnum):
+    DRAFT_CREATED = "DRAFT_CREATED"
+
+
+class MessageRole(StrEnum):
+    USER = "user"
+    ASSISTANT = "assistant"
+    TOOL = "tool"
+
+
+class Channel(StrEnum):
+    WEB_CHAT = "WEB_CHAT"
+
+
+class ToolName(StrEnum):
+    QUERY_ORDER = "query_order"
+    QUERY_DEVICE = "query_device"
+    QUERY_REPAIR_STATUS = "query_repair_status"
+    CREATE_CASE_DRAFT = "create_case_draft"
+
+
+class ToolStatus(StrEnum):
+    RUNNING = "running"
+    SUCCESS = "success"
+    ERROR = "error"
+    BLOCKED = "blocked"
+
+
+class ErrorCode(StrEnum):
+    VALIDATION_ERROR = "VALIDATION_ERROR"
+    UNAUTHORIZED = "UNAUTHORIZED"
+    CONVERSATION_NOT_FOUND = "CONVERSATION_NOT_FOUND"
+    CASE_DRAFT_NOT_FOUND = "CASE_DRAFT_NOT_FOUND"
+    POLICY_NOT_FOUND = "POLICY_NOT_FOUND"
+    TOOL_TIMEOUT = "TOOL_TIMEOUT"
+    TOOL_UNAVAILABLE = "TOOL_UNAVAILABLE"
+    AGENT_LIMIT_EXCEEDED = "AGENT_LIMIT_EXCEEDED"
+    AGENT_BUDGET_EXCEEDED = "AGENT_BUDGET_EXCEEDED"
+    CASE_DRAFT_VALIDATION_FAILED = "CASE_DRAFT_VALIDATION_FAILED"
+    INTERNAL_ERROR = "INTERNAL_ERROR"
+
+
+ALLOWED_MODEL_TOOLS = frozenset(
+    {
+        ToolName.QUERY_ORDER.value,
+        ToolName.QUERY_DEVICE.value,
+        ToolName.QUERY_REPAIR_STATUS.value,
+    }
+)
+

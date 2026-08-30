@@ -1,0 +1,16 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: globalcare-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: globalcare_agent
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "55432:5432"
+    volumes:
+      - globalcare_pgdata:/var/lib/postgresql/data
+
+volumes:
+  globalcare_pgdata:
