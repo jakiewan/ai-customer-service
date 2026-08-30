@@ -28,10 +28,12 @@ class Settings(BaseSettings):
 
     embedding_mode: str = "hash"
     embedding_model: str = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
+    embedding_dimensions: int = 256
     policy_backend: str = "memory"
     policy_dir: str = "agent_service/data/policies"
     database_url: str = "postgresql+psycopg://postgres:postgres@127.0.0.1:5432/globalcare_agent"
     persistence_mode: str = "memory"
+    checkpointer_mode: str = "memory"
 
     business_mode: str = "mock"
     business_base_url: str = "http://127.0.0.1:8081"

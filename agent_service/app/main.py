@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 from contextlib import asynccontextmanager
@@ -11,6 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
 
 from .business import build_business_gateway
+from .checkpointer import open_checkpointer, to_psycopg_dsn
 from .config import Settings, get_settings
 from .constants import ErrorCode
 from .graph import GraphService, build_graph
@@ -18,6 +20,7 @@ from .model_factory import AgentModel
 from .policy_store import PolicyStore
 from .schemas import (
     ApiResponse,
+    AuditEventView,
     CaseDraftView,
     ConversationResponse,
     ConversationView,
@@ -56,6 +59,32 @@ def _status_for_error(code: str) -> int:
     }.get(code, 500)
 
 
+async def _postgres_ready(database_url: str) -> bool:
+    def probe() -> bool:
+        import psycopg
+
+        with psycopg.connect(to_psycopg_dsn(database_url), connect_timeout=2) as connection:
+            connection.execute("SELECT 1")
+        return True
+
+    try:
+        return await asyncio.to_thread(probe)
+    except Exception:
+        return False
+
+
+async def _mcp_ready(mcp_url: str) -> bool:
+    try:
+        from langchain_mcp_adapters.client import MultiServerMCPClient
+
+        client = MultiServerMCPClient(
+            {"globalcare": {"transport": "streamable_http", "url": mcp_url}}
+        )
+        return bool(await client.get_tools())
+    except Exception:
+        return False
+
+
 def create_app(settings: Settings | None = None) -> FastAPI:
     app = FastAPI(
         title="GlobalCare Agent API",
@@ -74,7 +103,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     policy_dir = Path(app_settings.policy_dir)
     if not policy_dir.is_absolute():
         policy_dir = Path(__file__).resolve().parents[1] / "data" / "policies"
-    policy_store = PolicyStore(policy_dir, backend=app_settings.policy_backend, database_url=app_settings.database_url)
+    policy_store = PolicyStore(
+        policy_dir,
+        backend=app_settings.policy_backend,
+        database_url=app_settings.database_url,
+        embedding_mode=app_settings.embedding_mode,
+        embedding_model=app_settings.embedding_model,
+        embedding_dimensions=app_settings.embedding_dimensions,
+    )
     model = AgentModel(
         mode=app_settings.llm_mode,
         api_key=app_settings.minimax_api_key,
@@ -96,13 +132,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         mcp_url=app_settings.mcp_url,
     )
     store = InMemoryStore()
-    graph = build_graph(
-        model=model,
-        policy_store=policy_store,
-        query_gateway=query_gateway,
-        draft_gateway=draft_gateway,
-        max_steps=app_settings.max_graph_steps,
-    )
+    graph_kwargs = {
+        "model": model,
+        "policy_store": policy_store,
+        "query_gateway": query_gateway,
+        "draft_gateway": draft_gateway,
+        "max_steps": app_settings.max_graph_steps,
+    }
+    graph = build_graph(**graph_kwargs)
     conversation_service = ConversationService(
         store=store,
         graph_service=GraphService(
@@ -116,7 +153,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(_: FastAPI):
-        yield
+        async with open_checkpointer(app_settings.checkpointer_mode, app_settings.database_url) as checkpointer:
+            if app_settings.checkpointer_mode.lower() == "postgres":
+                conversation_service.graph_service.graph = build_graph(**graph_kwargs, checkpointer=checkpointer)
+                app.state.checkpointer_state = "up"
+            else:
+                app.state.checkpointer_state = "memory"
+            yield
 
     app.router.lifespan_context = lifespan
 
@@ -162,10 +205,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def readyz(request: Request):
         trace_id = _trace_id(request)
         # memory 模式是明确的离线 fallback，不伪装成 PostgreSQL 已连接。
-        postgres_state = "up" if app_settings.persistence_mode.lower() == "postgres" else "degraded"
+        postgres_state = "degraded"
+        if app_settings.checkpointer_mode.lower() == "postgres":
+            postgres_state = "up" if await _postgres_ready(app_settings.database_url) else "down"
         # 根据实际 PolicyStore 实例判断 pgvector 是否创建成功。
         pgvector_state = "up" if policy_store.pg_vector_store is not None else "degraded"
-        mcp_state = "up" if app_settings.mcp_mode.lower() in {"http", "streamable_http"} else "degraded"
+        mcp_state = "degraded"
+        if app_settings.mcp_mode.lower() in {"http", "streamable_http"}:
+            mcp_state = "up" if await _mcp_ready(app_settings.mcp_url) else "down"
         model_state = "configured" if app_settings.llm_mode.lower() == "mock" or app_settings.minimax_api_key else "missing"
         return ApiResponse(
             data={
@@ -220,9 +267,26 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         result = await conversation_service.conversation_view(conversation_id, token)
         return ApiResponse(data=result, trace_id=_trace_id(request))
 
+    @app.get(
+        "/api/v1/conversations/{conversation_id}/audit",
+        response_model=ApiResponse[list[AuditEventView]],
+        tags=["conversation"],
+    )
+    async def get_conversation_audit(
+        request: Request,
+        conversation_id: UUID,
+        token: str = Depends(demo_token_dependency),
+    ):
+        result = await conversation_service.audit_views(conversation_id, token)
+        return ApiResponse(data=result, trace_id=_trace_id(request))
+
     @app.get("/api/v1/case-drafts/{case_draft_id}", response_model=ApiResponse[CaseDraftView], tags=["case-draft"])
-    async def get_case_draft(request: Request, case_draft_id: UUID):
-        result = await conversation_service.draft_view(case_draft_id)
+    async def get_case_draft(
+        request: Request,
+        case_draft_id: UUID,
+        token: str = Depends(demo_token_dependency),
+    ):
+        result = await conversation_service.draft_view(case_draft_id, token)
         return ApiResponse(data=result, trace_id=_trace_id(request))
 
     return app

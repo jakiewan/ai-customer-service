@@ -6,8 +6,9 @@ from typing import Any
 from uuid import UUID, uuid4
 
 from .constants import ConversationStatus, ErrorCode, Intent
-from .graph import AgentRunError, GraphService
+from .graph import AgentBudgetError, AgentRunError, GraphService
 from .schemas import (
+    AuditEventView,
     CaseDraftView,
     ConversationResponse,
     ConversationView,
@@ -64,10 +65,17 @@ class ConversationService:
             conversation_id, token, request.client_message_id, request.message
         )
         if duplicate is not None:
+            await self._audit(
+                conversation_id, token, trace_id, "MESSAGE_IDEMPOTENT_REPLAY", {"client_message_id": request.client_message_id}
+            )
             yield {"event": "status", "data": {"phase": record.status.value, "message": "幂等重放：返回上次处理结果"}}
             for event in self._replay_result(duplicate, trace_id):
                 yield event
             return
+
+        await self._audit(
+            conversation_id, token, trace_id, "MESSAGE_RECEIVED", {"client_message_id": request.client_message_id}
+        )
 
         persisted_state = dict(record.state)
         state: dict[str, Any] = {
@@ -86,6 +94,9 @@ class ConversationService:
             "human_reason": None,
             "error_code": None,
             "tool_events": [],
+            # 运行预算按单条用户消息计算；订单、草稿和缺失字段才是跨轮状态。
+            "step_count": 0,
+            "tool_call_count": 0,
         }
         yield {"event": "status", "data": {"phase": "AI_ACTIVE", "message": "正在理解你的售后问题"}}
         final_state: dict[str, Any] | None = None
@@ -99,6 +110,13 @@ class ConversationService:
                     final_state = current_state
                     continue
                 phase = patch.get("phase") or current_state.get("phase") or node_name
+                await self._audit(
+                    conversation_id,
+                    token,
+                    trace_id,
+                    "GRAPH_NODE_COMPLETED",
+                    {"node": node_name, "phase": str(phase)},
+                )
                 yield {
                     "event": "status",
                     "data": {
@@ -108,15 +126,45 @@ class ConversationService:
                     },
                 }
                 for tool_event in patch.get("tool_events", []):
+                    await self._audit(
+                        conversation_id,
+                        token,
+                        trace_id,
+                        "TOOL_CALL",
+                        {
+                            "tool_name": tool_event.get("tool_name"),
+                            "status": tool_event.get("status"),
+                            "tool_trace_id": tool_event.get("trace_id"),
+                            "error_code": tool_event.get("error_code"),
+                        },
+                    )
                     yield {"event": "tool_call", "data": tool_event}
                 for evidence in patch.get("policy_evidence", []):
                     policy_id = str(evidence.get("policy_id"))
                     if policy_id not in evidence_sent:
                         evidence_sent.add(policy_id)
+                        await self._audit(
+                            conversation_id,
+                            token,
+                            trace_id,
+                            "POLICY_EVIDENCE",
+                            {
+                                "policy_id": evidence.get("policy_id"),
+                                "market": evidence.get("market"),
+                                "version": evidence.get("version"),
+                            },
+                        )
                         yield {"event": "policy_evidence", "data": evidence}
                 if node_name == "create_case_draft" and patch.get("case_draft_id"):
                     created_draft = True
                     draft = patch.get("case_draft") or {}
+                    await self._audit(
+                        conversation_id,
+                        token,
+                        trace_id,
+                        "CASE_DRAFT_CREATED",
+                        {"case_draft_id": patch["case_draft_id"], "status": "DRAFT_CREATED"},
+                    )
                     yield {
                         "event": "case_draft_created",
                         "data": {
@@ -127,6 +175,18 @@ class ConversationService:
                             "idempotent_replay": bool(draft.get("idempotent_replay", False)),
                         },
                     }
+        except AgentBudgetError as exc:
+            logger.error("Agent 预算门禁触发: trace_id=%s error=%s", trace_id, exc)
+            yield {
+                "event": "error",
+                "data": {
+                    "code": ErrorCode.AGENT_BUDGET_EXCEEDED.value,
+                    "message": str(exc),
+                    "retryable": True,
+                },
+            }
+            yield {"event": "done", "data": {"status": ConversationStatus.FAILED.value, "trace_id": trace_id}}
+            return
         except AgentRunError as exc:
             logger.error("Agent 运行上限触发: trace_id=%s error=%s", trace_id, exc)
             yield {
@@ -180,6 +240,13 @@ class ConversationService:
             reply=reply,
             citations=final_state.get("citations", []),
             result=result,
+        )
+        await self._audit(
+            conversation_id,
+            token,
+            trace_id,
+            "AGENT_RUN_COMPLETED",
+            {"status": result["status"], "human_required": result["human_required"]},
         )
         yield {
             "event": "done",
@@ -235,8 +302,9 @@ class ConversationService:
             updated_at=record.updated_at,
         )
 
-    async def draft_view(self, draft_id: UUID) -> CaseDraftView:
+    async def draft_view(self, draft_id: UUID, token: str) -> CaseDraftView:
         draft = await self.store.get_draft(draft_id)
+        await self.store.get_conversation(UUID(str(draft["conversation_id"])), token)
         return CaseDraftView(
             case_draft_id=draft_id,
             status=draft.get("status", "DRAFT_CREATED"),
@@ -252,6 +320,35 @@ class ConversationService:
             policy_evidence=[PolicyEvidence.model_validate(item) for item in draft.get("policy_evidence", [])],
             review_required=True,
             created_at=draft.get("created_at") or utc_now(),
+        )
+
+    async def audit_views(self, conversation_id: UUID, token: str) -> list[AuditEventView]:
+        records = await self.store.get_audits(conversation_id, token)
+        return [
+            AuditEventView(
+                audit_id=item.audit_id,
+                trace_id=item.trace_id,
+                event_type=item.event_type,
+                event_payload=item.event_payload,
+                created_at=item.created_at,
+            )
+            for item in records
+        ]
+
+    async def _audit(
+        self,
+        conversation_id: UUID,
+        token: str,
+        trace_id: str,
+        event_type: str,
+        event_payload: dict[str, Any],
+    ) -> None:
+        await self.store.record_audit(
+            conversation_id,
+            token,
+            trace_id=trace_id,
+            event_type=event_type,
+            event_payload=event_payload,
         )
 
 

@@ -52,7 +52,7 @@ def run() -> None:
         assert len(created_events) == 1
         draft_id = created_events[0]["case_draft_id"]
 
-        draft = client.get(f"{BASE_URL}/api/v1/case-drafts/{draft_id}")
+        draft = client.get(f"{BASE_URL}/api/v1/case-drafts/{draft_id}", headers=HEADERS)
         draft.raise_for_status()
         assert draft.json()["data"]["status"] == "DRAFT_CREATED"
 

@@ -76,6 +76,7 @@ def build_graph(
     query_gateway: BusinessGateway,
     draft_gateway: BusinessGateway,
     max_steps: int = 12,
+    checkpointer: Any | None = None,
 ):
     """构造单一售后 Agent 状态图；写入节点与模型工具权限在应用层固定。"""
 
@@ -394,10 +395,14 @@ def build_graph(
     graph.add_conditional_edges("create_case_draft", after_create)
     graph.add_edge("reuse_draft", "render_response")
     graph.add_edge("render_response", END)
-    return graph.compile(checkpointer=MemorySaver())
+    return graph.compile(checkpointer=checkpointer or MemorySaver())
 
 
 class AgentRunError(RuntimeError):
+    pass
+
+
+class AgentBudgetError(AgentRunError):
     pass
 
 
@@ -410,6 +415,12 @@ class GraphService:
     async def stream(self, initial_state: AfterSalesState, *, thread_id: str):
         if int(initial_state.get("step_count", 0)) >= self.max_steps:
             raise AgentRunError("Agent 最大步骤数已达到上限")
+        estimated_tokens = sum(
+            max(1, len(str(message.get("content", ""))) // 4)
+            for message in initial_state.get("messages", [])
+        )
+        if estimated_tokens > self.token_budget:
+            raise AgentBudgetError("本次消息超过 Agent 单轮预算")
         config = {"configurable": {"thread_id": thread_id}}
         state = dict(initial_state)
         emitted_nodes = 0

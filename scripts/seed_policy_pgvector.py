@@ -9,7 +9,14 @@ from agent_service.app.policy_store import PolicyStore
 def main() -> int:
     settings = get_settings()
     policy_dir = Path(__file__).resolve().parents[1] / "agent_service" / "data" / "policies"
-    store = PolicyStore(policy_dir, backend="pgvector", database_url=settings.database_url)
+    store = PolicyStore(
+        policy_dir,
+        backend="pgvector",
+        database_url=settings.database_url,
+        embedding_mode=settings.embedding_mode,
+        embedding_model=settings.embedding_model,
+        embedding_dimensions=settings.embedding_dimensions,
+    )
     if store.pg_vector_store is None:
         print("PGVECTOR_UNAVAILABLE")
         return 2

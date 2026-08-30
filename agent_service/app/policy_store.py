@@ -1,4 +1,5 @@
 import hashlib
+import logging
 import re
 from pathlib import Path
 from typing import Iterable
@@ -10,6 +11,8 @@ from langchain_core.vectorstores import InMemoryVectorStore
 
 from .constants import Language, Market
 from .schemas import PolicyEvidence
+
+logger = logging.getLogger(__name__)
 
 
 def _tokens(text: str) -> list[str]:
@@ -46,6 +49,23 @@ class HashEmbeddings(Embeddings):
         return self._embed(text)
 
 
+def build_embeddings(mode: str, model_name: str, dimensions: int) -> Embeddings:
+    """生产可选本地多语言 embedding，离线/CI 默认使用确定性 Hash embedding。"""
+
+    if mode.lower() == "huggingface":
+        try:
+            from langchain_huggingface import HuggingFaceEmbeddings
+
+            return HuggingFaceEmbeddings(
+                model_name=model_name,
+                model_kwargs={"device": "cpu"},
+                encode_kwargs={"normalize_embeddings": True},
+            )
+        except Exception as exc:
+            logger.error("HuggingFace Embedding 初始化失败，回退 Hash Embedding: %s", exc)
+    return HashEmbeddings(dimensions=dimensions)
+
+
 def _load_frontmatter(path: Path) -> Document:
     content = path.read_text(encoding="utf-8")
     metadata: dict[str, str] = {}
@@ -61,12 +81,21 @@ def _load_frontmatter(path: Path) -> Document:
 class PolicyStore:
     """政策检索端口。默认内存向量库，配置 pgvector 时使用 PostgreSQL。"""
 
-    def __init__(self, policy_dir: str | Path, backend: str = "memory", database_url: str | None = None) -> None:
+    def __init__(
+        self,
+        policy_dir: str | Path,
+        backend: str = "memory",
+        database_url: str | None = None,
+        embedding_mode: str = "hash",
+        embedding_model: str = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
+        embedding_dimensions: int = 256,
+    ) -> None:
         self.policy_dir = Path(policy_dir)
         self.backend = backend
         self.database_url = database_url
         self.documents = self._load_documents()
-        self.embeddings = HashEmbeddings()
+        self.embeddings = build_embeddings(embedding_mode, embedding_model, embedding_dimensions)
+        self.embedding_dimensions = embedding_dimensions
         self.vector_store = InMemoryVectorStore.from_documents(self.documents, self.embeddings)
         self.pg_vector_store = None
         if backend == "pgvector" and database_url:
@@ -86,7 +115,7 @@ class PolicyStore:
             self.pg_vector_store = PGVector(
                 embeddings=self.embeddings,
                 connection=database_url,
-                embedding_length=self.embeddings.dimensions,
+                embedding_length=self.embedding_dimensions,
                 collection_name="globalcare_policy",
                 pre_delete_collection=False,
             )
@@ -150,4 +179,3 @@ class PolicyStore:
             excerpt=excerpt,
             score=round(score, 3),
         )
-

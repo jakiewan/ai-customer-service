@@ -52,7 +52,7 @@ async def test_case_request_creates_then_reuses_draft() -> None:
     second_text = "".join(event["data"].get("delta", "") for event in second)
     assert "复用" in second_text
     assert not any(event["event"] == "case_draft_created" for event in second)
-    view = await service.draft_view(UUID(first_draft_id))
+    view = await service.draft_view(UUID(first_draft_id), "test-token")
     assert str(view.case_draft_id) == first_draft_id
 
 
@@ -89,3 +89,32 @@ async def test_repair_status_returns_fact_instead_of_new_draft() -> None:
     output = "".join(event["data"].get("delta", "") for event in events)
     assert "维修处理中" in output
     assert not any(event["event"] == "case_draft_created" for event in events)
+
+
+@pytest.mark.asyncio
+async def test_multiple_turns_do_not_consume_next_turn_step_budget() -> None:
+    app = create_app(Settings(demo_token="test-token"))
+    service = app.state.conversation_service
+    conversation = await service.create_conversation(
+        "test-token", CreateConversationRequest(channel="WEB_CHAT", market="MY", language="zh-CN")
+    )
+    await collect_events(service, conversation.conversation_id, "message-007", "手机无法开机怎么办")
+    await collect_events(service, conversation.conversation_id, "message-008", "保修政策是什么")
+    third = await collect_events(
+        service, conversation.conversation_id, "message-009", "查询订单 ORD-MY-2001 的维修进度"
+    )
+    assert not any(event["event"] == "error" for event in third)
+    text = "".join(event["data"].get("delta", "") for event in third)
+    assert "维修处理中" in text
+
+
+@pytest.mark.asyncio
+async def test_message_over_budget_stops_before_graph_execution() -> None:
+    app = create_app(Settings(demo_token="test-token", token_budget=1))
+    service = app.state.conversation_service
+    conversation = await service.create_conversation(
+        "test-token", CreateConversationRequest(channel="WEB_CHAT", market="MY", language="zh-CN")
+    )
+    events = await collect_events(service, conversation.conversation_id, "message-010", "手机无法开机怎么办")
+    errors = [event for event in events if event["event"] == "error"]
+    assert errors[0]["data"]["code"] == "AGENT_BUDGET_EXCEEDED"
