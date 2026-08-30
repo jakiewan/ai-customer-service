@@ -36,6 +36,15 @@ class ConversationRecord:
     updated_at: datetime = field(default_factory=now_utc)
 
 
+@dataclass
+class AuditEventRecord:
+    audit_id: UUID
+    trace_id: str
+    event_type: str
+    event_payload: dict[str, Any]
+    created_at: datetime = field(default_factory=now_utc)
+
+
 class ConversationNotFoundError(LookupError):
     pass
 
@@ -50,6 +59,7 @@ class InMemoryStore:
     def __init__(self) -> None:
         self._conversations: dict[UUID, ConversationRecord] = {}
         self._drafts: dict[UUID, dict[str, Any]] = {}
+        self._audits: dict[UUID, list[AuditEventRecord]] = {}
         self._lock = asyncio.Lock()
 
     async def create_conversation(self, *, token: str, channel: Channel, market: str | None, language: str | None) -> ConversationRecord:
@@ -65,6 +75,7 @@ class InMemoryStore:
                 "status": conversation.status.value,
             }
             self._conversations[conversation.conversation_id] = conversation
+            self._audits[conversation.conversation_id] = []
             return conversation
 
     async def get_conversation(self, conversation_id: UUID, token: str | None = None) -> ConversationRecord:
@@ -119,7 +130,25 @@ class InMemoryStore:
             raise CaseDraftNotFoundError(str(draft_id))
         return draft
 
+    async def record_audit(
+        self,
+        conversation_id: UUID,
+        token: str,
+        *,
+        trace_id: str,
+        event_type: str,
+        event_payload: dict[str, Any],
+    ) -> None:
+        async with self._lock:
+            await self.get_conversation(conversation_id, token)
+            self._audits.setdefault(conversation_id, []).append(
+                AuditEventRecord(uuid4(), trace_id, event_type, event_payload)
+            )
+
+    async def get_audits(self, conversation_id: UUID, token: str) -> list[AuditEventRecord]:
+        await self.get_conversation(conversation_id, token)
+        return list(self._audits.get(conversation_id, []))
+
     async def get_state(self, conversation_id: UUID, token: str) -> dict[str, Any]:
         conversation = await self.get_conversation(conversation_id, token)
         return dict(conversation.state)
-

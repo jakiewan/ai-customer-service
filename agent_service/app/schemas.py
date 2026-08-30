@@ -96,6 +96,14 @@ class ConversationView(BaseModel):
     updated_at: datetime
 
 
+class AuditEventView(BaseModel):
+    audit_id: UUID
+    trace_id: str
+    event_type: str
+    event_payload: dict[str, Any]
+    created_at: datetime
+
+
 class AgentEvent(BaseModel):
     event: str
     data: dict[str, Any]
@@ -118,4 +126,3 @@ class ErrorResponse(BaseModel):
     message: str
     retryable: bool = False
     trace_id: str
-

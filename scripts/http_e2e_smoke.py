@@ -67,6 +67,12 @@ def run() -> None:
         assert "维修处理中" in progress_text
         assert not [data for name, data in progress_events if name == "case_draft_created"]
 
+        audit = client.get(f"{BASE_URL}/api/v1/conversations/{conversation_id}/audit", headers=HEADERS)
+        audit.raise_for_status()
+        audit_types = [item["event_type"] for item in audit.json()["data"]]
+        assert "TOOL_CALL" in audit_types
+        assert "CASE_DRAFT_CREATED" in audit_types
+
     print("HTTP_E2E_OK")
 
 
