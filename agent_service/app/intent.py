@@ -3,12 +3,13 @@ from dataclasses import dataclass
 
 from .constants import Intent, Language, Market
 
-
 STATUS_TERMS = (
     "维修进度",
     "维修状态",
     "修到哪",
     "订单状态",
+    "工单",
+    "修好了吗",
     "repair status",
     "repair progress",
     "service status",
@@ -34,12 +35,36 @@ TROUBLESHOOTING_TERMS = (
     "开不了机",
     "黑屏",
     "不充电",
+    "不能使用",
+    "坏了",
     "故障",
     "troubleshoot",
     "won't turn on",
     "cannot power on",
     "not charging",
     "black screen",
+)
+POWER_TROUBLESHOOTING_TERMS = (
+    "无法开机",
+    "不能开机",
+    "开不了机",
+    "黑屏",
+    "不充电",
+    "cannot power on",
+    "won't turn on",
+    "not charging",
+    "black screen",
+)
+HIGH_RISK_TERMS = (
+    "退款",
+    "退货",
+    "换机",
+    "赔偿",
+    "赔付",
+    "支付",
+    "refund",
+    "replacement",
+    "compensation",
 )
 FAQ_TERMS = (
     "保修",
@@ -72,6 +97,9 @@ def _contains(text: str, terms: tuple[str, ...]) -> bool:
 def classify_intent(text: str) -> Intent:
     """离线确定性路由是安全底座，LLM 只作为可选增强，不决定写操作。"""
 
+    # 高风险请求进入政策证据门禁，不能落入普通排查或 Case Draft 路径。
+    if _contains(text, HIGH_RISK_TERMS):
+        return Intent.FAQ
     if _contains(text, STATUS_TERMS):
         return Intent.REPAIR_STATUS
     if _contains(text, CASE_TERMS):
@@ -112,13 +140,13 @@ def extract_context(text: str) -> ExtractedContext:
 
     lowered = text.lower()
     market = None
-    if "马来西亚" in text or "malaysia" in lowered or re.search(r"\bMY\b", text, re.I):
+    if "马来西亚" in text or "malaysia" in lowered or re.search(r"\bMY\b", text, re.IGNORECASE):
         market = Market.MY
-    elif "中国" in text or "china" in lowered or re.search(r"\bCN\b", text, re.I):
+    elif "中国" in text or "china" in lowered or re.search(r"\bCN\b", text, re.IGNORECASE):
         market = Market.CN
 
     language = Language.EN_MY if re.search(r"\b(the|what|how|my|repair)\b", lowered) else Language.ZH_CN
-    issue_category = "cannot_power_on" if _contains(text, TROUBLESHOOTING_TERMS[:8]) else "general_issue"
+    issue_category = "cannot_power_on" if _contains(text, POWER_TROUBLESHOOTING_TERMS) else "general_issue"
     return ExtractedContext(
         order_id=order_id,
         serial_number=serial_number,
@@ -130,7 +158,7 @@ def extract_context(text: str) -> ExtractedContext:
 
 
 def issue_summary(text: str) -> str:
-    if _contains(text, TROUBLESHOOTING_TERMS[:8]):
-        return "设备无法正常开机或存在相关故障"
+    if _contains(text, POWER_TROUBLESHOOTING_TERMS):
+        # 保留与政策文档一致的核心术语，避免摘要改写后丢失 RAG 主题命中。
+        return "设备无法开机（用户描述为无法正常开机或相关故障）"
     return text[:240]
-

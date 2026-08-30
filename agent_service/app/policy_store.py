@@ -2,7 +2,6 @@ import hashlib
 import logging
 import re
 from pathlib import Path
-from typing import Iterable
 
 import yaml
 from langchain_core.documents import Document
@@ -61,9 +60,19 @@ def build_embeddings(mode: str, model_name: str, dimensions: int) -> Embeddings:
                 model_kwargs={"device": "cpu"},
                 encode_kwargs={"normalize_embeddings": True},
             )
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - 本地模型加载失败时必须保留离线 fallback。
             logger.error("HuggingFace Embedding 初始化失败，回退 Hash Embedding: %s", exc)
     return HashEmbeddings(dimensions=dimensions)
+
+
+SUPPORTED_POLICY_TOPICS = {
+    "warranty": ("保修", "保多久", "保修期", "warranty", "coverage", "eligible"),
+    "power": ("无法开机", "不能开机", "开不了机", "黑屏", "不充电", "power on", "not charging"),
+    "repair": ("维修", "售后", "报修", "送修", "repair", "after-sales", "service center"),
+    "status": ("进度", "状态", "修到哪", "repair status", "repair progress"),
+}
+UNSUPPORTED_POLICY_TERMS = ("退款", "退货", "换机", "赔偿", "赔付", "支付", "refund", "replacement", "compensation")
+UNSUPPORTED_PRODUCT_TERMS = ("智能手表", "手表", "耳机", "笔记本", "路由器", "平板", "laptop", "watch", "earbuds", "router")
 
 
 def _load_frontmatter(path: Path) -> Document:
@@ -119,7 +128,7 @@ class PolicyStore:
                 collection_name="globalcare_policy",
                 pre_delete_collection=False,
             )
-        except Exception:
+        except Exception:  # noqa: BLE001 - pgvector 不可用不能阻断离线 FAQ。
             # readyz 会报告 pgvector 不可用，不能让 FAQ 离线模式整体不可启动。
             self.pg_vector_store = None
 
@@ -133,6 +142,15 @@ class PolicyStore:
     def retrieve(self, query: str, market: Market | str | None, top_k: int = 3) -> list[PolicyEvidence]:
         if not market:
             return []
+        lowered_query = query.lower()
+        if any(term.lower() in lowered_query for term in (*UNSUPPORTED_POLICY_TERMS, *UNSUPPORTED_PRODUCT_TERMS)):
+            return []
+        if not any(
+            term.lower() in lowered_query
+            for terms in SUPPORTED_POLICY_TOPICS.values()
+            for term in terms
+        ):
+            return []
         normalized_market = str(market).upper()
         candidate_docs: list[Document]
         if self.pg_vector_store is not None:
@@ -140,7 +158,7 @@ class PolicyStore:
                 candidate_docs = self.pg_vector_store.similarity_search(
                     query, k=max(top_k * 3, top_k), filter={"market": normalized_market}
                 )
-            except Exception:
+            except Exception:  # noqa: BLE001 - 向量检索失败时使用确定性 fallback。
                 candidate_docs = self._memory_search(query, normalized_market, top_k)
         else:
             candidate_docs = self._memory_search(query, normalized_market, top_k)
@@ -149,8 +167,20 @@ class PolicyStore:
     def _memory_search(self, query: str, market: str, top_k: int) -> list[Document]:
         results = self.vector_store.similarity_search(query, k=max(len(self.documents), top_k * 4))
         filtered = [doc for doc in results if str(doc.metadata.get("market", "")).upper() == market]
-        if filtered:
-            return filtered[:top_k]
+        query_lower = query.lower()
+        topic_terms = [
+            term.lower()
+            for terms in SUPPORTED_POLICY_TOPICS.values()
+            if any(term.lower() in query_lower for term in terms)
+            for term in terms
+        ]
+        topic_filtered = [
+            document
+            for document in filtered
+            if any(term in document.page_content.lower() for term in topic_terms)
+        ]
+        if topic_filtered:
+            return topic_filtered[:top_k]
         # 向量库为空或模型不擅长中文时，以确定性 token overlap 兜底。
         scored: list[tuple[int, Document]] = []
         query_tokens = set(_tokens(query))

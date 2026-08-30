@@ -1,11 +1,10 @@
 import asyncio
-import json
 import logging
 from collections.abc import AsyncIterator
 from typing import Any
-from uuid import UUID, uuid4
+from uuid import UUID
 
-from .constants import ConversationStatus, ErrorCode, Intent
+from .constants import ConversationStatus, ErrorCode
 from .graph import AgentBudgetError, AgentRunError, GraphService
 from .schemas import (
     AuditEventView,
@@ -18,7 +17,7 @@ from .schemas import (
     PolicyEvidence,
     utc_now,
 )
-from .store import ConversationRecord, InMemoryStore
+from .store import InMemoryStore
 
 logger = logging.getLogger(__name__)
 
@@ -199,7 +198,7 @@ class ConversationService:
             }
             yield {"event": "done", "data": {"status": ConversationStatus.FAILED.value, "trace_id": trace_id}}
             return
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - SSE 入口必须屏蔽内部异常并返回统一错误。
             logger.error("Agent 运行失败: trace_id=%s error=%s", trace_id, exc)
             yield {
                 "event": "error",

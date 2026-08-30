@@ -9,7 +9,6 @@ from .constants import (
     Channel,
     ConversationStatus,
     ErrorCode,
-    Intent,
     Language,
     Market,
     MessageRole,

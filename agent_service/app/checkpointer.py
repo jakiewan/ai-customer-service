@@ -1,5 +1,6 @@
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from typing import AsyncIterator, Any
+from typing import Any
 
 from langgraph.checkpoint.memory import MemorySaver
 

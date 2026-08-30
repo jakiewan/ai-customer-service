@@ -3,10 +3,10 @@ import json
 import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Annotated, Any
+from typing import Annotated
 from uuid import UUID, uuid4
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Request, status
+from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
@@ -69,7 +69,7 @@ async def _postgres_ready(database_url: str) -> bool:
 
     try:
         return await asyncio.to_thread(probe)
-    except Exception:
+    except Exception:  # noqa: BLE001 - readiness 必须降级为 down，不能让健康检查抛出 500。
         return False
 
 
@@ -81,7 +81,7 @@ async def _mcp_ready(mcp_url: str) -> bool:
             {"globalcare": {"transport": "streamable_http", "url": mcp_url}}
         )
         return bool(await client.get_tools())
-    except Exception:
+    except Exception:  # noqa: BLE001 - MCP 会话/传输任意失败都应被报告为 down。
         return False
 
 

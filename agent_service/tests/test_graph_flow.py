@@ -1,5 +1,6 @@
-import pytest
 from uuid import UUID
+
+import pytest
 
 from agent_service.app.config import Settings
 from agent_service.app.main import create_app

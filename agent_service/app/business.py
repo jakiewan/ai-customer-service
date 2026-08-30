@@ -1,13 +1,12 @@
 import asyncio
 import hashlib
 import json
-from dataclasses import dataclass
 from typing import Any, Protocol
-from uuid import UUID, uuid4
+from uuid import uuid4
 
 import httpx
 
-from .constants import CaseDraftStatus, Market, ToolName, ToolStatus
+from .constants import CaseDraftStatus, Market, ToolName
 
 
 class BusinessGatewayError(RuntimeError):

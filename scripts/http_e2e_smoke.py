@@ -67,6 +67,16 @@ def run() -> None:
         assert "维修处理中" in progress_text
         assert not [data for name, data in progress_events if name == "case_draft_created"]
 
+        unsupported = client.post(
+            f"{BASE_URL}/api/v1/conversations/{conversation_id}/messages/stream",
+            headers=HEADERS,
+            json={"client_message_id": "e2e-message-003", "message": "退款要怎么处理"},
+        )
+        unsupported.raise_for_status()
+        unsupported_events = parse_sse(unsupported.text)
+        assert any(name == "human_required" for name, _ in unsupported_events)
+        assert not [data for name, data in unsupported_events if name == "policy_evidence"]
+
         audit = client.get(f"{BASE_URL}/api/v1/conversations/{conversation_id}/audit", headers=HEADERS)
         audit.raise_for_status()
         audit_types = [item["event_type"] for item in audit.json()["data"]]

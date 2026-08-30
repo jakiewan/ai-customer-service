@@ -6,7 +6,12 @@ from uuid import uuid4
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
 
-from .business import BusinessGateway, BusinessGatewayError, draft_fingerprint, mask_identifier
+from .business import (
+    BusinessGateway,
+    BusinessGatewayError,
+    draft_fingerprint,
+    mask_identifier,
+)
 from .constants import (
     AgentPhase,
     ConversationStatus,
@@ -42,12 +47,14 @@ def _assistant_message(content: str) -> list[dict[str, Any]]:
 def _missing_fields(state: AfterSalesState) -> list[str]:
     intent = state.get("intent")
     missing: list[str] = []
-    if intent in {Intent.REPAIR_STATUS.value, Intent.CASE_REQUEST.value}:
-        if not state.get("order_id") and not state.get("serial_number"):
-            missing.append("order_id_or_serial_number")
-    if intent in {Intent.FAQ.value, Intent.TROUBLESHOOTING.value, Intent.CASE_REQUEST.value}:
-        if not state.get("market"):
-            missing.append("market")
+    if intent in {Intent.REPAIR_STATUS.value, Intent.CASE_REQUEST.value} and not state.get(
+        "order_id"
+    ) and not state.get("serial_number"):
+        missing.append("order_id_or_serial_number")
+    if intent in {Intent.FAQ.value, Intent.TROUBLESHOOTING.value, Intent.CASE_REQUEST.value} and not state.get(
+        "market"
+    ):
+        missing.append("market")
     return missing
 
 
@@ -323,7 +330,7 @@ def build_graph(
                 "Agent 侧任务已完成；正式 Case 和维修工单由既有售后系统继续处理。"
             )
         else:
-            reply = "我可以帮你查询保修政策、排查故障、查询维修进度或整理维修受理草稿。请描述你的问题。"
+            reply = "我可以帮你查询保修政策、排查故障、查询维修进度或整理维修受理草稿。请描述你的售后问题。"
         return _step(
             state,
             reply=reply,

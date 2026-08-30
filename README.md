@@ -10,6 +10,7 @@
 - LangChain：MiniMax-M3 可选结构化意图模型、Prompt、`Document`、Embedding 和 pgvector Retriever。
 - MCP：FastMCP 仅暴露 `query_order`、`query_device`、`query_repair_status` 三个只读工具；写入草稿不暴露给模型。
 - FastAPI：会话、SSE、草稿查询、健康检查、CORS 和 OpenAPI。
+- 审计：会话内的 Agent 节点、工具、政策证据、草稿事件可通过 Audit API 查询。
 - Spring Boot：模拟订单、设备、维修状态和 Case Draft 幂等接口。
 - Vue 3：真实调用 FastAPI SSE，不再只用固定话术演示。
 - PostgreSQL + pgvector：独立 Docker 容器、政策向量集合和 LangGraph checkpoint 表。
@@ -19,6 +20,9 @@
 - [技术方案](技术方案.md)
 - [需求分析报告](需求分析报告.md)
 - [开发执行状态](开发执行状态.md)
+- [测试说明与报告](测试说明与报告.md)
+- [测试用例清单](测试用例清单.md)
+- [面试话术](面试话术.md)
 - [开工思维导图](diagram/globalcare-project-mindmap.svg)
 - [后端架构图](diagram/globalcare-backend-architecture.svg)
 - [Case Draft 时序图](diagram/globalcare-case-draft-sequence.svg)
@@ -118,6 +122,7 @@ PYTHONPATH=. /opt/anaconda3/envs/ai-base/bin/python scripts/http_e2e_smoke.py
 2. “我要申请售后维修” → 请求订单号/SN；下一轮补 `ORD-MY-2001` 后创建草稿。
 3. “查询维修进度” → 调 MCP 返回 `维修处理中`，**不创建第二份草稿**。
 4. 重复提交相同 `client_message_id` → SSE 幂等重放。
+5. `GET /api/v1/conversations/{id}/audit` → 查询受控的节点、工具、政策与草稿轨迹。
 
 ## 模型与 Embedding 模式
 
@@ -130,4 +135,5 @@ PYTHONPATH=. /opt/anaconda3/envs/ai-base/bin/python scripts/http_e2e_smoke.py
 
 - 没有真实登录、真实客户数据、真实订单、正式 Case、Work Order、人工坐席或通知自动化。
 - Case Draft 是 Agent 唯一可触发的受控业务写入，且由应用节点调用 Spring Boot 接口；模型没有写工具权限。
-- 当前 API 会话对象仍采用内存仓储；政策向量和 LangGraph Checkpoint 可以落 PostgreSQL。将会话、审计和真实鉴权全面持久化是下一阶段工作，不应声称已经生产上线。
+- 当前 API 会话对象和 Audit API 仍采用内存仓储；政策向量和 LangGraph Checkpoint 可以落 PostgreSQL。将会话、审计和真实鉴权全面持久化是下一阶段工作，不应声称已经生产上线。
+- Dify FAQ 基线是已规划的第二阶段，用同一份政策 Markdown 做对照；本 MVP 不并行维护第二个客服运行时。

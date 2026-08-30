@@ -650,46 +650,6 @@
 
         const policy = ref(null);
         const draft = ref(null);
-        const context = ref({
-          intent: null,
-          issueCategory: null,
-          lastIssue: null,
-          orderId: null,
-          serialNumber: null,
-          awaitingRepairStatus: false,
-          awaitingCaseInfo: false,
-          lastCitationTitle: null
-        });
-
-        const traceDefinitions = {
-          TROUBLESHOOTING: [
-            ["CONTEXT_READY", "已识别设备故障问题"],
-            ["RETRIEVING_POLICY", "检索 MY 市场的排查指引"],
-            ["ANSWERING", "生成可执行排查建议"]
-          ],
-          REPAIR_STATUS: [
-            ["CONTEXT_READY", "确认维修查询所需信息"],
-            ["QUERYING_BUSINESS_DATA", "通过 MCP 查询维修状态"],
-            ["ANSWERING", "整理当前状态和下一步"]
-          ],
-          CASE_REQUEST: [
-            ["COLLECTING_INFO", "补充创建案例所需字段"],
-            ["CONTEXT_READY", "校验订单和设备信息"],
-            ["RETRIEVING_POLICY", "检索对应市场政策"],
-            ["QUERYING_BUSINESS_DATA", "通过 MCP 查询设备和订单"],
-            ["BUILDING_CASE_DRAFT", "生成结构化 Case Draft"],
-            ["CREATING_CASE_DRAFT", "调用业务接口保存草稿"],
-          ["CASE_DRAFT_CREATED", "草稿已保存，Agent 任务完成"]
-          ],
-          FAQ: [
-            ["RETRIEVING_POLICY", "按 MY 市场检索政策"],
-            ["ANSWERING", "生成带引用的政策答复"]
-          ],
-          GENERAL: [
-            ["COLLECTING_INFO", "识别用户诉求"],
-            ["ANSWERING", "生成澄清问题"]
-          ]
-        };
 
         function nowTime() {
           return new Date().toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" });
@@ -706,170 +666,18 @@
           sendMessage();
         }
 
-        function resetTrace(intent) {
-          const definitions = traceDefinitions[intent] || traceDefinitions.GENERAL;
-          trace.value = definitions.map((item, index) => ({
-            key: intent + "-" + index,
-            name: item[0],
-            detail: item[1],
-            state: index === 0 ? "active" : "pending"
-          }));
-          currentStatus.value = trace.value[0].name;
-        }
-
-        function advanceTrace(index) {
-          trace.value = trace.value.map((step, stepIndex) => {
-            if (stepIndex < index) return Object.assign({}, step, { state: "done" });
-            if (stepIndex === index) return Object.assign({}, step, { state: "active" });
-            return Object.assign({}, step, { state: "pending" });
-          });
-          currentStatus.value = trace.value[index].name;
-        }
-
         function finishTrace() {
           trace.value = trace.value.map((step) => Object.assign({}, step, { state: "done" }));
         }
 
-        function extractContext(userText) {
-          const orderMatch = userText.match(/订单号(?:是|为)?[：:\s]*([A-Z0-9-]{4,})/i);
-          const serialMatch = userText.match(/(?:SN|序列号|串号)(?:是|为)?[：:\s]*([A-Z0-9-]{4,})/i);
-          if (orderMatch) context.value.orderId = orderMatch[1];
-          if (serialMatch) context.value.serialNumber = serialMatch[1];
-        }
-
-        function classifyIntent(userText) {
-          const text = userText.toLowerCase();
-          if (context.value.awaitingRepairStatus && (/case[-\s]?[a-z0-9-]+/i.test(userText) || /订单号|工单号|维修单号/.test(userText))) {
-            return "REPAIR_STATUS";
-          }
-          if (/维修进度|维修状态|修好了吗|工单到哪|查进度/.test(text)) return "REPAIR_STATUS";
-          if (/申请售后|申请维修|我要维修|报修|创建案例|提交售后/.test(text) || context.value.awaitingCaseInfo) return "CASE_REQUEST";
-          if (/无法开机|开不了机|不开机|黑屏|充不进电|故障|坏了|不能使用/.test(text)) return "TROUBLESHOOTING";
-          if (/保修|政策|保多久|维修费用|需要什么材料/.test(text)) return "FAQ";
-          return "GENERAL";
-        }
-
-        function setPolicyIfNeeded(intent) {
-          if (intent === "FAQ" || intent === "CASE_REQUEST") {
-            policy.value = {
-              title: "马来西亚手机保修政策",
-              version: "MY-2026-01",
-              excerpt: "保修资格需要结合购买时间、产品型号和设备状态进行确认。"
-            };
-          } else {
-            policy.value = null;
-          }
-        }
-
-        function pushAssistant(content, citation) {
-          let visibleCitation = citation;
-          if (citation && context.value.lastCitationTitle === citation.title) visibleCitation = null;
-          if (visibleCitation) context.value.lastCitationTitle = visibleCitation.title;
+        function pushAssistant(content) {
           messages.value.push({
             id: Date.now() + Math.random(),
             role: "assistant",
             time: nowTime(),
-            content,
-            citation: visibleCitation
+            content
           });
           scrollToBottom();
-        }
-
-        function makeDraft(userText) {
-          if (!draft.value) {
-            draft.value = {
-              id: "DRAFT-20260830-001",
-              category: context.value.issueCategory || "设备故障维修",
-              summary: context.value.lastIssue || userText,
-              resolution: "售后维修"
-            };
-          } else {
-            draft.value = Object.assign({}, draft.value, {
-              summary: context.value.lastIssue || draft.value.summary,
-              category: context.value.issueCategory || draft.value.category
-            });
-          }
-          context.value.awaitingCaseInfo = false;
-        }
-
-        function finishIntent(intent, userText) {
-          finishTrace();
-          setPolicyIfNeeded(intent);
-          const citation = policy.value ? {
-            title: policy.value.title,
-            excerpt: policy.value.excerpt
-          } : null;
-
-          if (intent === "TROUBLESHOOTING") {
-            context.value.lastIssue = userText;
-            context.value.issueCategory = /无法开机|开不了机|不开机/.test(userText) ? "设备无法开机" : "设备故障维修";
-            currentStatus.value = "AI_ACTIVE";
-            pushAssistant(
-              "先给你几个安全的排查步骤：\n1. 使用原装充电器充电 30 分钟。\n2. 同时长按电源键和音量减键约 15 秒，尝试强制重启。\n3. 检查充电口是否有异物或明显损坏。\n\n如果仍然无法解决，可以继续说“我要申请售后维修”，我会沿用当前故障信息整理同一份 Case Draft。",
-              null
-            );
-          } else if (intent === "REPAIR_STATUS") {
-            context.value.awaitingRepairStatus = false;
-            currentStatus.value = "AI_ACTIVE";
-            if (draft.value && !/case[-\s]?[a-z0-9-]+|订单号|工单号|维修单号/i.test(userText)) {
-              pushAssistant("当前 Case Draft " + draft.value.id + " 已保存。正式维修工单尚未生成，后续状态由售后受理流程处理。", null);
-            } else if (/case[-\s]?[a-z0-9-]+|订单号|工单号|维修单号/i.test(userText)) {
-              pushAssistant("已查询到演示维修记录：当前状态为“检测中”，服务中心正在确认设备故障，预计 1-2 个工作日更新下一节点。", null);
-            } else {
-              context.value.awaitingRepairStatus = true;
-              pushAssistant("可以查询维修进度，请提供维修案例编号或订单号，例如：CASE-1001。", null);
-            }
-          } else if (intent === "CASE_REQUEST") {
-            if (!context.value.lastIssue && !/设备|手机|故障|维修/.test(userText)) {
-              context.value.awaitingCaseInfo = true;
-              currentStatus.value = "AI_ACTIVE";
-              pushAssistant("我可以帮你整理售后案例。请先描述设备故障，并提供订单号或设备 SN。", null);
-            } else if (!context.value.orderId || !context.value.serialNumber) {
-              context.value.awaitingCaseInfo = true;
-              currentStatus.value = "AI_ACTIVE";
-              pushAssistant("我已经关联当前问题，但还缺少订单号或设备 SN。请补充后，我会生成 Case Draft；不会重复创建多个草稿。", null);
-            } else {
-              const hadDraft = Boolean(draft.value);
-              makeDraft(userText);
-              trace.value = trace.value.map((step, index) => Object.assign({}, step, {
-                state: index === trace.value.length - 1 ? "active" : "done"
-              }));
-              currentStatus.value = "CASE_DRAFT_CREATED";
-              pushAssistant(
-                (!hadDraft ? "已根据当前会话的问题、订单和设备信息生成 Case Draft。" : "已关联并更新当前会话已有的 Case Draft，没有创建新的草稿。") +
-                "\n草稿编号：" + draft.value.id + "\n状态：草稿已保存，Agent 任务完成。",
-                citation
-              );
-            }
-          } else if (intent === "FAQ") {
-            currentStatus.value = "AI_ACTIVE";
-            pushAssistant("马来西亚市场的手机保修资格需要结合购买时间、产品型号和设备状态确认。你可以提供订单号和设备 SN，我再帮你查询具体情况。", citation);
-          } else {
-            currentStatus.value = "AI_ACTIVE";
-            pushAssistant("我可以处理三类售后问题：故障排查、维修进度查询和申请售后维修。你可以直接告诉我想解决什么问题。", null);
-          }
-          isTyping.value = false;
-          scrollToBottom();
-        }
-
-        function runSimulation(intent, userText) {
-          resetTrace(intent);
-          messages.value.push({ id: Date.now() + 1, role: "assistant", time: nowTime(), typing: true });
-          scrollToBottom();
-          const totalSteps = trace.value.length;
-          let stepIndex = 0;
-          function nextStep() {
-            const typingIndex = messages.value.findIndex((item) => item.typing);
-            if (typingIndex >= 0 && stepIndex > 0) messages.value.splice(typingIndex, 1);
-            if (stepIndex >= totalSteps) {
-              finishIntent(intent, userText);
-              return;
-            }
-            advanceTrace(stepIndex);
-            stepIndex += 1;
-            setTimeout(nextStep, 480);
-          }
-          nextStep();
         }
 
         function updateTraceFromApi(data) {
@@ -971,7 +779,7 @@
           } catch (error) {
             const typingIndex = messages.value.findIndex((item) => item.typing);
             if (typingIndex >= 0) messages.value.splice(typingIndex, 1);
-            pushAssistant("无法连接 Agent 服务。请确认 FastAPI 服务已启动后重试。", null);
+            pushAssistant("无法连接 Agent 服务。请确认 FastAPI 服务已启动后重试。");
             currentStatus.value = "FAILED";
           } finally {
             isTyping.value = false;
