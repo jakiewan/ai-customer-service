@@ -602,7 +602,7 @@
                   <div class="draft-row"><span>问题类型</span><b>{{ draft.category }}</b></div>
                   <div class="draft-row"><span>问题摘要</span><b>{{ draft.summary }}</b></div>
                   <div class="draft-row"><span>建议处理</span><b>{{ draft.resolution }}</b></div>
-                  <div class="draft-row"><span>市场</span><b>{{ market }}</b></div>
+                  <div class="draft-row"><span>市场</span><b>{{ draft.market || market }}</b></div>
                 </div>
                 <div class="draft-foot">Agent 已完成信息整理并保存草稿，后续由售后受理流程处理。</div>
               </div>
@@ -727,6 +727,8 @@
 
         async function runApi(userText) {
           trace.value = [{ key: "api-active", name: "AI_ACTIVE", detail: "正在连接 Agent 服务", state: "active" }];
+          // 政策引用属于当前消息，不得把上一轮证据带到新问题。
+          policy.value = null;
           messages.value.push({ id: Date.now() + 1, role: "assistant", time: nowTime(), typing: true });
           scrollToBottom();
           try {
@@ -767,7 +769,8 @@
                     id: data.case_draft_id,
                     category: "设备售后维修",
                     summary: data.summary,
-                    resolution: "售后维修"
+                    resolution: "售后维修",
+                    market: data.market || market.value
                   };
                 }
                 if (eventName === "done") {

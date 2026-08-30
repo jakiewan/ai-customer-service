@@ -18,7 +18,8 @@ class Settings(BaseSettings):
     app_version: str = "0.1.0"
     environment: str = "local"
     demo_token: str = "globalcare-demo-token"
-    cors_origins: str = "http://127.0.0.1:4173,http://localhost:4173"
+    # `null` 仅为本地 file:// 打开方式提供兼容；生产环境应覆盖为明确 HTTPS 来源。
+    cors_origins: str = "http://127.0.0.1:4173,http://localhost:4173,null"
 
     llm_mode: str = "mock"
     minimax_api_key: str = Field(default="", repr=False)

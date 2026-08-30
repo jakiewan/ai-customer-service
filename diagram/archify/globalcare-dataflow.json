@@ -1,0 +1,72 @@
+{
+  "schema_version": 1,
+  "diagram_type": "dataflow",
+  "meta": {
+    "title": "GlobalCare 售后请求数据流",
+    "locale": "zh-CN",
+    "quality_profile": "showcase",
+    "viewBox": [1080, 620],
+    "views": [
+      {
+        "id": "request-data",
+        "label": "请求与回复",
+        "focus": ["chat", "api", "graph", "reply"],
+        "note": "用户消息经过 FastAPI 和 LangGraph，形成带引用的回复。"
+      },
+      {
+        "id": "evidence-data",
+        "label": "政策与事实",
+        "focus": ["policy", "graph", "mock", "mcp"],
+        "note": "政策证据与脱敏业务事实进入 Agent 编排。"
+      },
+      {
+        "id": "draft-data",
+        "label": "草稿与审计",
+        "focus": ["graph", "spring", "draft", "audit"],
+        "note": "校验后的结构化草稿和审计事件进入结果阶段。"
+      }
+    ]
+  },
+  "stages": [
+    { "label": "输入" },
+    { "label": "接入" },
+    { "label": "Agent 证据" },
+    { "label": "工具与写入" },
+    { "label": "结果" }
+  ],
+  "nodes": [
+    { "id": "chat", "type": "frontend", "label": "Vue Chat", "sublabel": "user message", "stage": 0, "row": 1, "tag": "SSE" },
+    { "id": "api", "type": "backend", "label": "FastAPI", "sublabel": "request + thread", "stage": 1, "row": 1, "tag": "REST" },
+    { "id": "policy", "type": "database", "label": "Policy Evidence", "sublabel": "market-filtered", "stage": 1, "row": 3, "tag": "pgvector" },
+    { "id": "graph", "type": "backend", "label": "LangGraph", "sublabel": "state reducer", "stage": 2, "row": 1, "tag": "bounded run" },
+    { "id": "mock", "type": "external", "label": "Business Facts", "sublabel": "脱敏 Mock", "stage": 2, "row": 3, "tag": "order / device" },
+    { "id": "spring", "type": "backend", "label": "Spring Boot", "sublabel": "draft API", "stage": 3, "row": 0, "tag": "internal" },
+    { "id": "mcp", "type": "messagebus", "label": "MCP Tools", "sublabel": "read-only", "stage": 3, "row": 2, "tag": "whitelist" },
+    { "id": "reply", "type": "backend", "label": "SSE Reply", "sublabel": "answer + citations", "stage": 4, "row": 0, "tag": "user-facing" },
+    { "id": "draft", "type": "backend", "label": "Case Draft", "sublabel": "DRAFT_CREATED", "stage": 4, "row": 2, "tag": "idempotent" },
+    { "id": "audit", "type": "database", "label": "Audit Trail", "sublabel": "events + trace_id", "stage": 4, "row": 3, "tag": "MVP memory" }
+  ],
+  "flows": [
+    { "id": "message-in", "from": "chat", "to": "api", "label": "message", "classification": "conversation input", "variant": "emphasis", "route": "straight" },
+    { "id": "state-in", "from": "api", "to": "graph", "label": "state", "classification": "agent state", "variant": "emphasis", "route": "straight", "labelDy": -60 },
+    { "id": "policy-evidence", "from": "policy", "to": "graph", "label": "evidence", "classification": "market policy", "variant": "security", "route": "vertical-channel", "channelX": 430, "fromSide": "right", "toSide": "left" },
+    { "id": "tool-request", "from": "graph", "to": "mcp", "label": "tool call", "classification": "MCP request", "variant": "default", "route": "vertical-channel", "channelX": 640, "fromSide": "right", "toSide": "left" },
+    { "id": "business-facts", "from": "mock", "to": "mcp", "label": "facts", "classification": "business fact", "variant": "dashed", "route": "vertical-channel", "channelX": 680, "fromSide": "right", "toSide": "left" },
+    { "id": "draft-payload", "from": "graph", "to": "spring", "label": "draft", "classification": "controlled write", "variant": "security", "route": "top-channel", "channelY": 80, "fromSide": "top", "toSide": "top" },
+    { "id": "draft-created", "from": "spring", "to": "draft", "label": "created", "classification": "case draft", "variant": "emphasis", "route": "vertical-channel", "channelX": 850, "fromSide": "right", "toSide": "left", "labelDx": 45 },
+    { "id": "reply-out", "from": "graph", "to": "reply", "label": "reply", "classification": "response", "variant": "emphasis", "route": "top-channel", "channelY": 40, "fromSide": "top", "toSide": "top" },
+    { "id": "audit-event", "from": "graph", "to": "audit", "label": "audit", "classification": "audit", "variant": "dashed", "route": "vertical-channel", "channelX": 820, "fromSide": "right", "toSide": "left" }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "数据边界与产出",
+      "items": [
+        "Vue / FastAPI / LangGraph 负责输入、状态和 SSE 回复",
+        "政策证据与 MCP 业务事实必须进入校验链",
+        "Case Draft 通过字段、证据和事实校验后才写入 Spring Boot",
+        "草稿写入使用业务指纹幂等，节点与工具事件进入审计轨迹"
+      ]
+    }
+  ]
+}

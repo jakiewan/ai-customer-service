@@ -1,7 +1,6 @@
 """验证 FastAPI → LangGraph → MCP → Spring Boot Case Draft 的本地链路。"""
 
 import json
-from collections import defaultdict
 
 import httpx
 
@@ -51,6 +50,7 @@ def run() -> None:
         created_events = [data for name, data in repair_events if name == "case_draft_created"]
         assert len(created_events) == 1
         draft_id = created_events[0]["case_draft_id"]
+        assert created_events[0]["market"] == "MY"
 
         draft = client.get(f"{BASE_URL}/api/v1/case-drafts/{draft_id}", headers=HEADERS)
         draft.raise_for_status()

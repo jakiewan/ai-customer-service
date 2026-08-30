@@ -1,0 +1,115 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "GlobalCare 售后 Agent 处理工作流",
+    "locale": "zh-CN",
+    "quality_profile": "showcase",
+    "views": [
+      {
+        "id": "case-path",
+        "label": "维修申请主链",
+        "focus": ["user", "chat", "classify", "route", "policy", "business", "validate", "draft", "response"],
+        "note": "展示从用户消息到 Case Draft 的完整受控链路。"
+      },
+      {
+        "id": "self-service",
+        "label": "自助回答分支",
+        "focus": ["route", "policy", "status_tool", "response"],
+        "note": "FAQ、故障排查和维修进度直接返回，不重复创建草稿。"
+      },
+      {
+        "id": "safety-stop",
+        "label": "证据与安全门",
+        "focus": ["policy", "business", "validate", "human_required"],
+        "note": "缺少可靠证据、业务冲突或草稿校验失败时停止确定性处理。"
+      }
+    ]
+  },
+  "lanes": [
+    { "id": "channel", "label": "用户与 API" },
+    { "id": "agent", "label": "LangGraph Agent" },
+    { "id": "evidence", "label": "政策与业务工具" },
+    { "id": "outcome", "label": "结果与安全门", "variant": "exception" }
+  ],
+  "phases": [
+    { "id": "intake", "label": "接入与理解", "fromCol": 0, "toCol": 2 },
+    { "id": "evidence_phase", "label": "证据与事实", "fromCol": 3, "toCol": 4, "variant": "emphasis" },
+    { "id": "commit_phase", "label": "校验与结果", "fromCol": 5, "toCol": 5, "variant": "security" }
+  ],
+  "groups": [
+    { "id": "agent_loop", "label": "意图路由", "lane": "agent", "fromCol": 2, "toCol": 3, "variant": "emphasis" },
+    { "id": "evidence_loop", "label": "政策 / 业务证据", "lane": "evidence", "fromCol": 3, "toCol": 4, "variant": "dashed" },
+    { "id": "write_gate", "label": "草稿写入门", "lane": "outcome", "fromCol": 4, "toCol": 5, "variant": "security" }
+  ],
+  "mainPath": ["user", "chat", "classify", "route", "policy", "business", "validate", "draft", "response"],
+  "semanticChecks": {
+    "allowedRoots": ["user"],
+    "allowedTerminals": ["response", "human_required"],
+    "requiredEdges": [
+      { "from": "user", "to": "chat" },
+      { "from": "chat", "to": "classify" },
+      { "from": "classify", "to": "route" },
+      { "from": "validate", "to": "draft" }
+    ]
+  },
+  "nodes": [
+    { "id": "user", "lane": "channel", "col": 0, "type": "external", "label": "用户", "sublabel": "描述售后问题", "width": 132 },
+    { "id": "chat", "lane": "channel", "col": 1, "type": "frontend", "label": "Vue Chat", "sublabel": "消息 + SSE", "width": 132 },
+    { "id": "response", "lane": "channel", "col": 5, "type": "backend", "label": "客服回复", "sublabel": "答案 / 引用 / 草稿", "width": 138 },
+    { "id": "classify", "lane": "agent", "col": 2, "type": "backend", "label": "识别意图", "sublabel": "结构化路由", "tag": "LangChain", "width": 138 },
+    { "id": "route", "lane": "agent", "col": 3, "type": "backend", "label": "选择路径", "sublabel": "FAQ / 故障 / 进度 / 维修", "tag": "LangGraph", "width": 148 },
+    { "id": "policy", "lane": "evidence", "col": 3, "type": "database", "label": "检索政策", "sublabel": "market 过滤 + 引用", "width": 148 },
+    { "id": "status_tool", "lane": "channel", "col": 4, "type": "messagebus", "label": "查询维修状态", "sublabel": "MCP 只读", "width": 148 },
+    { "id": "business", "lane": "evidence", "col": 4, "type": "messagebus", "label": "查询订单设备", "sublabel": "MCP 只读事实", "width": 148 },
+    { "id": "validate", "lane": "outcome", "col": 4, "type": "security", "label": "校验草稿", "sublabel": "字段 + 证据 + 事实", "tag": "Fail closed", "width": 148 },
+    { "id": "draft", "lane": "outcome", "col": 5, "type": "backend", "label": "保存 Case Draft", "sublabel": "应用节点写入", "tag": "幂等", "width": 148 },
+    { "id": "human_required", "lane": "evidence", "col": 5, "type": "external", "label": "human_required", "sublabel": "停止确定性承诺", "width": 148 }
+  ],
+  "edges": [
+    { "id": "user-chat", "from": "user", "to": "chat" },
+    { "id": "chat-classify", "from": "chat", "to": "classify", "label": "message + thread_id", "variant": "emphasis" },
+    { "id": "classify-route", "from": "classify", "to": "route", "label": "intent", "variant": "emphasis" },
+    { "id": "route-policy", "from": "route", "to": "policy", "label": "FAQ / 故障 / 维修", "variant": "default" },
+    { "id": "route-status", "from": "route", "to": "status_tool", "label": "维修进度", "variant": "dashed", "role": "branch" },
+    { "id": "route-response", "from": "route", "to": "response", "label": "一般咨询", "variant": "dashed", "role": "branch" },
+    { "id": "policy-business", "from": "policy", "to": "business", "label": "CASE_REQUEST", "variant": "emphasis" },
+    { "id": "policy-response", "from": "policy", "to": "response", "label": "政策证据 + 排查建议", "variant": "dashed", "role": "return" },
+    { "id": "status-response", "from": "status_tool", "to": "response", "label": "confirmed status", "variant": "dashed", "role": "return" },
+    { "id": "business-validate", "from": "business", "to": "validate", "label": "订单 / 设备事实", "variant": "emphasis" },
+    { "id": "validate-draft", "from": "validate", "to": "draft", "label": "valid", "variant": "security" },
+    { "id": "validate-human", "from": "validate", "to": "human_required", "label": "evidence missing", "variant": "security", "role": "error" },
+    { "id": "policy-human", "from": "policy", "to": "human_required", "label": "no reliable policy", "variant": "security", "role": "error" },
+    { "id": "business-human", "from": "business", "to": "human_required", "label": "tool / market conflict", "variant": "security", "role": "error" },
+    { "id": "draft-response", "from": "draft", "to": "response", "label": "DRAFT_CREATED", "variant": "emphasis", "role": "return" }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "意图分层",
+      "items": [
+        "FAQ 与无法开机优先返回政策依据和可操作排查建议",
+        "维修进度直接调用只读工具，不创建第二份草稿",
+        "申请维修才进入订单事实、草稿构建和校验路径"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "证据门禁",
+      "items": [
+        "政策检索按购买市场过滤并保留引用",
+        "订单所属市场与请求市场冲突时停止处理",
+        "草稿字段、政策证据和业务事实齐全后才允许写入"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "失败闭环",
+      "items": [
+        "无依据、工具不可用或校验失败统一返回 human_required",
+        "Case Draft 是 Agent 侧终点，不代表正式 Case 或 Work Order",
+        "同一会话已有草稿时走复用逻辑，避免重复创建"
+      ]
+    }
+  ]
+}

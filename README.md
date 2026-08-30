@@ -114,7 +114,12 @@ cd domain_service && mvn -Dmaven.repo.local=.mvn/repository clean test
 
 # 三个服务启动后，验证 FastAPI → LangGraph → MCP → Spring Boot
 PYTHONPATH=. /opt/anaconda3/envs/ai-base/bin/python scripts/http_e2e_smoke.py
+
+# 对真实运行服务执行 27 个边界用例并循环 3 轮
+PYTHONPATH=. /opt/anaconda3/envs/ai-base/bin/python scripts/run_boundary_loop.py
 ```
+
+当前阶段六结果：162 条自动化用例 3 轮共 486 次全部通过；27 条真实服务边界用例 3 轮共 81 次全部通过。Computer Use 已实际操作 Vue 页面验证故障排查、市场切换、Case Draft、维修进度和高风险拒答。
 
 当前 Golden Conversation 至少覆盖：
 

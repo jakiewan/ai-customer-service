@@ -1,8 +1,76 @@
+# ──────────────────────────────────────────────
+# 环境与密钥
+# ──────────────────────────────────────────────
 .env
+.env.*
+!.env.example
+
+# ──────────────────────────────────────────────
+# Python
+# ──────────────────────────────────────────────
 __pycache__/
 *.py[cod]
+*$py.class
+*.so
+.Python
+
+# 测试 / 覆盖率
 .pytest_cache/
-agent_service/.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+.tox/
+.nox/
+
+# Linter / 类型检查
+.ruff_cache/
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# 虚拟环境
+.venv/
+venv/
+env/
+ENV/
+
+# ──────────────────────────────────────────────
+# Java / Maven
+# ──────────────────────────────────────────────
 domain_service/target/
 domain_service/.mvn/repository/
+*.class
+*.jar
+*.war
+*.ear
+hs_err_pid*
+
+# ──────────────────────────────────────────────
+# 前端 / Node
+# ──────────────────────────────────────────────
+node_modules/
+dist/
+build/
+.next/
+.nuxt/
+.cache/
+.parcel-cache/
+
+# ──────────────────────────────────────────────
+# IDE / 编辑器
+# ──────────────────────────────────────────────
+.idea/
+*.iml
+*.ipr
+*.iws
+
+# ──────────────────────────────────────────────
+# OS / 日志
+# ──────────────────────────────────────────────
 .DS_Store
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+*.log
+logs/

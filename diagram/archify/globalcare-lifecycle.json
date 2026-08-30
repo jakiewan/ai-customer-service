@@ -1,0 +1,65 @@
+{
+  "schema_version": 1,
+  "diagram_type": "lifecycle",
+  "meta": {
+    "title": "GlobalCare Agent 会话生命周期",
+    "locale": "zh-CN",
+    "quality_profile": "showcase",
+    "viewBox": [1080, 630],
+    "views": [
+      {
+        "id": "main-run",
+        "label": "主处理链",
+        "focus": ["received", "routing", "policy", "business", "resolved"],
+        "note": "从消息接收、证据检索到用户可见结果。"
+      },
+      {
+        "id": "draft-end",
+        "label": "草稿终点",
+        "focus": ["policy", "business", "draft_created"],
+        "note": "申请维修在事实和证据校验通过后结束为 Case Draft。"
+      },
+      {
+        "id": "safety-stop",
+        "label": "安全终点",
+        "focus": ["policy", "business", "human_required"],
+        "note": "无可靠依据、业务冲突或工具异常不做确定性承诺。"
+      }
+    ]
+  },
+  "lanes": [
+    { "id": "main", "label": "Agent 主阶段" },
+    { "id": "terminal", "label": "Agent 侧终点" }
+  ],
+  "states": [
+    { "id": "received", "type": "start", "label": "已接收", "sublabel": "MESSAGE_RECEIVED", "lane": "main", "col": 0, "step": "01", "tag": "entry" },
+    { "id": "routing", "type": "active", "label": "意图路由", "sublabel": "classify_intent", "lane": "main", "col": 1, "step": "02", "tag": "LangChain" },
+    { "id": "policy", "type": "active", "label": "政策检索", "sublabel": "market + evidence", "lane": "main", "col": 2, "step": "03", "tag": "RAG" },
+    { "id": "business", "type": "active", "label": "业务查询", "sublabel": "MCP read tools", "lane": "main", "col": 3, "step": "04", "tag": "facts" },
+    { "id": "resolved", "type": "success", "label": "已回复", "sublabel": "FAQ / 状态结果", "lane": "main", "col": 4, "step": "05", "tag": "done" },
+    { "id": "human_required", "type": "external", "label": "human_required", "sublabel": "无可靠依据或冲突", "lane": "terminal", "col": 1, "tag": "stop" },
+    { "id": "draft_created", "type": "success", "label": "Case Draft 已创建", "sublabel": "DRAFT_CREATED", "lane": "terminal", "col": 2, "tag": "Agent scope end" }
+  ],
+  "transitions": [
+    { "id": "receive-route", "from": "received", "to": "routing", "variant": "emphasis", "route": "straight" },
+    { "id": "route-policy", "from": "routing", "to": "policy", "variant": "default", "route": "straight" },
+    { "id": "policy-business", "from": "policy", "to": "business", "variant": "emphasis", "route": "straight" },
+    { "id": "policy-resolved", "from": "policy", "to": "resolved", "variant": "dashed", "route": "top-channel", "channelY": 80, "fromSide": "top", "toSide": "top" },
+    { "id": "policy-human", "from": "policy", "to": "human_required", "variant": "security", "route": "bottom-channel", "channelY": 360, "fromSide": "bottom", "toSide": "top" },
+    { "id": "business-resolved", "from": "business", "to": "resolved", "variant": "dashed", "route": "straight" },
+    { "id": "business-draft", "from": "business", "to": "draft_created", "variant": "emphasis", "route": "right-channel", "channelX": 640, "fromSide": "right", "toSide": "left" },
+    { "id": "business-human", "from": "business", "to": "human_required", "variant": "security", "route": "straight", "fromSide": "bottom", "toSide": "top" }
+  ],
+  "cards": [
+    {
+      "dot": "rose",
+      "title": "生命周期边界",
+      "items": [
+        "主阶段由 LangGraph 顺序推进并按意图分支",
+        "Case Draft 在证据校验通过后作为 Agent 侧终点",
+        "政策证据不足、市场冲突或工具异常进入 human_required",
+        "正式 Case 和 Work Order 生命周期由下游 Java 系统负责"
+      ]
+    }
+  ]
+}

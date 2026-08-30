@@ -1,0 +1,184 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "GlobalCare 售后 Agent 运行架构",
+    "locale": "zh-CN",
+    "quality_profile": "showcase",
+    "viewBox": [1500, 820],
+    "repository": {
+      "url": "https://github.com/liukelly1993-ship-it/ai-customer-service",
+      "revision": "22e24b4da0f738c2339f4b4c119485f81fdee5ae"
+    },
+    "views": [
+      {
+        "id": "request-path",
+        "label": "请求主链路",
+        "focus": ["user", "vue_chat", "fastapi", "langgraph", "springboot"],
+        "note": "从网页消息进入 Agent，到 Case Draft 写入 Java 领域服务。"
+      },
+      {
+        "id": "evidence-path",
+        "label": "证据与工具",
+        "focus": ["langgraph", "langchain", "postgres", "mcp", "mock_business"],
+        "note": "政策证据、检查点和只读业务工具分开呈现。"
+      },
+      {
+        "id": "safety-boundary",
+        "label": "写入边界",
+        "focus": ["fastapi", "langgraph", "mcp", "springboot", "postgres"],
+        "note": "模型只获得只读工具，Case Draft 写入由应用节点控制。"
+      }
+    ]
+  },
+  "components": [
+    {
+      "id": "user",
+      "type": "external",
+      "label": "用户",
+      "pos": [40, 330],
+      "size": [140, 72],
+      "sources": [{ "path": "input_materials/PRD-GlobalCare-MVP.md" }]
+    },
+    {
+      "id": "vue_chat",
+      "type": "frontend",
+      "label": "Vue 3 Chat",
+      "pos": [235, 330],
+      "size": [155, 72],
+      "sources": [{ "path": "frontend/index.html" }]
+    },
+    {
+      "id": "fastapi",
+      "type": "backend",
+      "label": "FastAPI Agent API",
+      "pos": [445, 330],
+      "size": [170, 76],
+      "tag": "X-Demo-Token",
+      "sources": [
+        { "path": "agent_service/app/main.py" },
+        { "path": "agent_service/app/service.py" }
+      ]
+    },
+    {
+      "id": "langgraph",
+      "type": "backend",
+      "label": "LangGraph Agent",
+      "pos": [690, 220],
+      "size": [185, 78],
+      "tag": "thread_id",
+      "sources": [
+        { "path": "agent_service/app/graph.py" },
+        { "path": "agent_service/app/state.py" }
+      ]
+    },
+    {
+      "id": "langchain",
+      "type": "backend",
+      "label": "LangChain",
+      "pos": [690, 470],
+      "size": [185, 78],
+      "tag": "结构化输出",
+      "sources": [
+        { "path": "agent_service/app/model_factory.py" },
+        { "path": "agent_service/app/policy_store.py" }
+      ]
+    },
+    {
+      "id": "postgres",
+      "type": "database",
+      "label": "PostgreSQL",
+      "pos": [960, 150],
+      "size": [190, 78],
+      "tag": "可降级内存",
+      "sources": [
+        { "path": "agent_service/migrations/001_init.sql" },
+        { "path": "agent_service/app/checkpointer.py" }
+      ]
+    },
+    {
+      "id": "mcp",
+      "type": "messagebus",
+      "label": "FastMCP 查询层",
+      "pos": [960, 470],
+      "size": [190, 78],
+      "tag": "只读白名单",
+      "sources": [
+        { "path": "agent_service/mcp_server.py" },
+        { "path": "agent_service/app/business.py" }
+      ]
+    },
+    {
+      "id": "springboot",
+      "type": "backend",
+      "label": "Spring Boot Domain",
+      "pos": [960, 325],
+      "size": [190, 78],
+      "tag": "内部 HTTP",
+      "sources": [
+        { "path": "domain_service/src/main/java/com/globalcare/domain/api/DomainController.java" },
+        { "path": "domain_service/src/main/java/com/globalcare/domain/service/DomainService.java" }
+      ]
+    },
+    {
+      "id": "mock_business",
+      "type": "external",
+      "label": "脱敏业务 Mock",
+      "pos": [1235, 470],
+      "size": [190, 78],
+      "tag": "MVP 数据",
+      "sources": [{ "path": "agent_service/app/business.py" }]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "GlobalCare Agent Runtime",
+      "wraps": ["fastapi", "langgraph", "langchain", "postgres", "mcp"]
+    },
+    {
+      "kind": "security-group",
+      "label": "受控写入边界",
+      "wraps": ["fastapi", "langgraph", "springboot"]
+    }
+  ],
+  "connections": [
+    { "id": "user-to-vue", "from": "user", "to": "vue_chat", "label": "输入问题", "variant": "emphasis" },
+    { "id": "vue-to-api", "from": "vue_chat", "to": "fastapi", "label": "HTTP + SSE", "variant": "emphasis" },
+    { "id": "api-to-graph", "from": "fastapi", "to": "langgraph", "label": "State + thread_id", "variant": "emphasis", "labelAt": [653, 312] },
+    { "id": "graph-to-langchain", "from": "langgraph", "to": "langchain", "label": "意图 / RAG 编排", "variant": "default", "labelAt": [783, 312] },
+    { "id": "graph-to-postgres", "from": "langgraph", "to": "postgres", "label": "政策检索 + checkpoint", "variant": "security", "labelDy": -65 },
+    { "id": "graph-to-mcp", "from": "langgraph", "to": "mcp", "label": "只读工具调用", "variant": "default" },
+    { "id": "mcp-to-mock", "from": "mcp", "to": "mock_business", "label": "订单 / 设备 / 状态", "variant": "dashed", "labelDy": 66 },
+    { "id": "graph-to-spring", "from": "langgraph", "to": "springboot", "variant": "security" }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "请求主链",
+      "items": [
+        "Vue 3 只负责聊天展示，FastAPI 提供 REST 与 SSE",
+        "LangGraph 以 conversation_id 作为 thread_id 保存跨轮状态",
+        "回复包含政策引用、工具事实和 Case Draft 结果"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "证据路径",
+      "items": [
+        "LangChain 负责 MiniMax 结构化意图、Prompt 和政策检索",
+        "PostgreSQL 可承载 pgvector 政策集合与 LangGraph checkpoint",
+        "FastMCP 只暴露订单、设备和维修状态查询"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "安全边界",
+      "items": [
+        "模型工具白名单不包含正式 Case 或 Work Order 写入",
+        "Case Draft 由应用节点调用 Spring Boot 内部接口",
+        "MVP 的 MCP 业务事实来自脱敏 Mock，不代表真实生产数据"
+      ]
+    }
+  ]
+}

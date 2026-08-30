@@ -1,0 +1,77 @@
+{
+  "schema_version": 1,
+  "diagram_type": "sequence",
+  "meta": {
+    "title": "GlobalCare 维修申请 Case Draft 时序",
+    "locale": "zh-CN",
+    "quality_profile": "showcase",
+    "column_fit": "spread",
+    "viewBox": [1080, 560],
+    "views": [
+      {
+        "id": "intake",
+        "label": "消息接入",
+        "focus": ["user", "web", "api", "graph"],
+        "note": "用户通过网页提交消息，FastAPI 以会话 ID 启动图运行。"
+      },
+      {
+        "id": "evidence",
+        "label": "证据查询",
+        "focus": ["graph", "policy", "mcp"],
+        "note": "Agent 先检索购买市场政策，再调用 MCP 只读业务工具。"
+      },
+      {
+        "id": "draft-and-reply",
+        "label": "草稿与回复",
+        "focus": ["graph", "spring", "api", "web", "user"],
+        "note": "校验通过后写入 Case Draft，并通过 SSE 返回结果。"
+      }
+    ]
+  },
+  "participants": [
+    { "id": "user", "type": "external", "label": "用户", "sublabel": "网页访客" },
+    { "id": "web", "type": "frontend", "label": "Vue Chat", "sublabel": "SSE 客户端" },
+    { "id": "api", "type": "backend", "label": "FastAPI", "sublabel": "REST + SSE" },
+    { "id": "graph", "type": "backend", "label": "LangGraph", "sublabel": "Agent 状态图" },
+    { "id": "policy", "type": "database", "label": "Policy Store", "sublabel": "pgvector / memory" },
+    { "id": "mcp", "type": "messagebus", "label": "FastMCP", "sublabel": "只读工具层" },
+    { "id": "spring", "type": "backend", "label": "Spring Boot", "sublabel": "Case Draft API" }
+  ],
+  "segments": [
+    { "from": 150, "to": 235, "label": "接入" },
+    { "from": 245, "to": 365, "label": "政策与业务事实" },
+    { "from": 375, "to": 515, "label": "写入与返回" }
+  ],
+  "messages": [
+    { "id": "user-message", "from": "user", "to": "web", "y": 160, "label": "输入申请维修", "variant": "default" },
+    { "id": "stream-request", "from": "web", "to": "api", "y": 188, "label": "POST /messages/stream", "variant": "emphasis" },
+    { "id": "graph-start", "from": "api", "to": "graph", "y": 216, "label": "invoke(thread_id)", "variant": "emphasis" },
+    { "id": "policy-query", "from": "graph", "to": "policy", "y": 250, "label": "retrieve policy", "variant": "security" },
+    { "id": "policy-evidence", "from": "policy", "to": "graph", "y": 280, "label": "PolicyEvidence", "variant": "return" },
+    { "id": "mcp-order", "from": "graph", "to": "mcp", "y": 315, "label": "query_order", "variant": "default" },
+    { "id": "mcp-result", "from": "mcp", "to": "graph", "y": 345, "label": "business facts", "variant": "return" },
+    { "id": "draft-write", "from": "graph", "to": "spring", "y": 380, "label": "POST /case-drafts", "variant": "security" },
+    { "id": "draft-result", "from": "spring", "to": "graph", "y": 410, "label": "DRAFT_CREATED", "variant": "return" },
+    { "id": "reply-api", "from": "graph", "to": "api", "y": 440, "label": "reply + citations", "variant": "return" },
+    { "id": "sse-events", "from": "api", "to": "web", "y": 470, "label": "SSE events", "variant": "return" }
+  ],
+  "activations": [
+    { "participant": "web", "from": 180, "to": 480, "type": "frontend" },
+    { "participant": "api", "from": 200, "to": 480, "type": "backend" },
+    { "participant": "graph", "from": 200, "to": 450, "type": "backend" },
+    { "participant": "policy", "from": 245, "to": 290, "type": "database" },
+    { "participant": "mcp", "from": 310, "to": 355, "type": "messagebus" },
+    { "participant": "spring", "from": 375, "to": 420, "type": "backend" }
+  ],
+  "cards": [
+    {
+      "dot": "rose",
+      "title": "受控写入",
+      "items": [
+        "模型不能自由调用 Case Draft 写工具",
+        "应用节点向 Spring Boot 提交结构化草稿",
+        "政策证据和业务事实通过 SSE 一并返回"
+      ]
+    }
+  ]
+}

@@ -167,11 +167,12 @@ class ConversationService:
                     yield {
                         "event": "case_draft_created",
                         "data": {
-                            "case_draft_id": patch["case_draft_id"],
-                            "status": ConversationStatus.CASE_DRAFT_CREATED.value,
-                            "review_required": True,
-                            "summary": draft.get("issue_summary", "已保存售后受理草稿"),
-                            "idempotent_replay": bool(draft.get("idempotent_replay", False)),
+                        "case_draft_id": patch["case_draft_id"],
+                        "status": ConversationStatus.CASE_DRAFT_CREATED.value,
+                        "review_required": True,
+                        "summary": draft.get("issue_summary", "已保存售后受理草稿"),
+                        "market": draft.get("market"),
+                        "idempotent_replay": bool(draft.get("idempotent_replay", False)),
                         },
                     }
         except AgentBudgetError as exc:
@@ -227,6 +228,7 @@ class ConversationService:
             "reply": reply,
             "citations": final_state.get("citations", []),
             "case_draft_id": final_state.get("case_draft_id"),
+            "market": final_state.get("case_draft", {}).get("market") if final_state.get("case_draft") else final_state.get("market"),
             "status": final_state.get("conversation_status", ConversationStatus.AI_ACTIVE.value),
             "human_required": bool(final_state.get("human_required")),
             "trace_id": trace_id,
@@ -272,6 +274,7 @@ class ConversationService:
                     "status": ConversationStatus.CASE_DRAFT_CREATED.value,
                     "review_required": True,
                     "summary": "已复用现有 Case Draft",
+                    "market": result.get("market"),
                     "idempotent_replay": True,
                 },
             }
