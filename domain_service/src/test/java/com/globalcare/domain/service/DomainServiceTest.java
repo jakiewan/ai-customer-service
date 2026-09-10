@@ -9,6 +9,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class DomainServiceTest {
@@ -33,6 +34,18 @@ class DomainServiceTest {
 
         assertEquals(first.caseDraftId(), second.caseDraftId());
         assertTrue(second.idempotentReplay());
+    }
+
+    @Test
+    void shouldExposeSpecificCodeForMissingCaseDraft() {
+        DomainService service = new DomainService();
+
+        DomainNotFoundException exception = assertThrows(
+                DomainNotFoundException.class,
+                () -> service.getCaseDraft("missing-draft")
+        );
+
+        assertEquals("CASE_DRAFT_NOT_FOUND", exception.code());
     }
 
     private CaseDraftRequest request(String fingerprint) {

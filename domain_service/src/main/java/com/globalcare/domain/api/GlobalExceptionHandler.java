@@ -19,7 +19,7 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ApiError> handleNotFound(DomainNotFoundException exception) {
         LOGGER.error("业务对象不存在: {}", exception.getMessage());
         return ResponseEntity.status(HttpStatus.NOT_FOUND)
-                .body(new ApiError("NOT_FOUND", exception.getMessage(), false));
+                .body(new ApiError(exception.code(), exception.getMessage(), false));
     }
 
     @ExceptionHandler({IllegalArgumentException.class, MethodArgumentNotValidException.class})

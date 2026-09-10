@@ -1,0 +1,61 @@
+{
+  "schema_version": 1,
+  "diagram_type": "sequence",
+  "meta": {
+    "title": "申请售后 Case Draft 入口与调用链",
+    "locale": "zh-CN",
+    "quality_profile": "showcase",
+    "column_fit": "spread",
+    "viewBox": [1500, 860],
+    "views": [
+      { "id": "conversation-entry", "label": "会话入口", "focus": ["vue", "fastapi", "service"], "note": "先创建 Conversation，再用 conversation_id 发起 SSE 消息请求。" },
+      { "id": "agent-reasoning", "label": "Agent 推理与取证", "focus": ["service", "graph", "model", "policy", "fastmcp"], "note": "LangGraph 依次完成意图识别、政策检索和业务事实查询。" },
+      { "id": "draft-return", "label": "草稿写入与返回", "focus": ["graph", "spring", "service", "fastapi", "vue"], "note": "应用节点写入 Case Draft，ConversationService 记录结果并通过 SSE 返回。" }
+    ]
+  },
+  "participants": [
+    { "id": "vue", "type": "frontend", "label": "Vue Web" },
+    { "id": "fastapi", "type": "backend", "label": "FastAPI" },
+    { "id": "service", "type": "backend", "label": "会话服务" },
+    { "id": "graph", "type": "backend", "label": "LangGraph" },
+    { "id": "model", "type": "cloud", "label": "AgentModel" },
+    { "id": "policy", "type": "database", "label": "PolicyStore" },
+    { "id": "fastmcp", "type": "external", "label": "FastMCP" },
+    { "id": "spring", "type": "external", "label": "Spring Boot" }
+  ],
+  "segments": [
+    { "from": 150, "to": 290, "label": "创建会话" },
+    { "from": 310, "to": 625, "label": "Agent 理解与取证" },
+    { "from": 630, "to": 710, "label": "Case Draft 写入" },
+    { "from": 720, "to": 800, "label": "SSE 返回" }
+  ],
+  "messages": [
+    { "id": "create-conversation", "from": "vue", "to": "fastapi", "y": 170, "label": "POST /api/v1/conversations", "variant": "emphasis" },
+    { "id": "dispatch-create", "from": "fastapi", "to": "service", "y": 205, "label": "create_conversation(request)" },
+    { "id": "conversation-result", "from": "service", "to": "fastapi", "y": 240, "label": "ConversationResponse", "variant": "return" },
+    { "id": "conversation-id", "from": "fastapi", "to": "vue", "y": 275, "label": "200 · conversation_id", "variant": "return" },
+    { "id": "stream-message", "from": "vue", "to": "fastapi", "y": 330, "label": "POST /messages/stream", "variant": "emphasis", "note": "携带 client_message_id 与用户消息" },
+    { "id": "dispatch-stream", "from": "fastapi", "to": "service", "y": 365, "label": "stream_message(...)" },
+    { "id": "run-graph", "from": "service", "to": "graph", "y": 400, "label": "幂等检查后 GraphService.stream" },
+    { "id": "classify", "from": "graph", "to": "model", "y": 435, "label": "classify(message)" },
+    { "id": "intent-decision", "from": "model", "to": "graph", "y": 470, "label": "IntentDecision · CASE_REQUEST", "variant": "return" },
+    { "id": "retrieve-policy", "from": "graph", "to": "policy", "y": 505, "label": "retrieve + pgvector market filter" },
+    { "id": "policy-evidence", "from": "policy", "to": "graph", "y": 540, "label": "PolicyEvidence[]", "variant": "return" },
+    { "id": "query-order", "from": "graph", "to": "fastmcp", "y": 575, "label": "query_order(order_id)", "variant": "security" },
+    { "id": "order-facts", "from": "fastmcp", "to": "graph", "y": 610, "label": "脱敏订单与市场事实", "variant": "return" },
+    { "id": "create-draft", "from": "graph", "to": "spring", "y": 640, "label": "POST /internal/case-drafts", "variant": "emphasis", "note": "由应用节点调用，不是模型工具" },
+    { "id": "draft-result", "from": "spring", "to": "graph", "y": 675, "label": "case_draft_id + status", "variant": "return" },
+    { "id": "graph-updates", "from": "graph", "to": "service", "y": 705, "label": "节点更新 + final state", "variant": "return" },
+    { "id": "save-result", "from": "service", "to": "fastapi", "y": 740, "label": "保存结果与审计后生成 SSE", "variant": "return" },
+    { "id": "render-events", "from": "fastapi", "to": "vue", "y": 775, "label": "status / evidence / tool / token / done", "variant": "return" }
+  ],
+  "activations": [
+    { "participant": "fastapi", "from": 168, "to": 780, "type": "backend" },
+    { "participant": "service", "from": 200, "to": 745, "type": "backend" },
+    { "participant": "graph", "from": 395, "to": 710, "type": "backend" },
+    { "participant": "model", "from": 430, "to": 475, "type": "cloud" },
+    { "participant": "policy", "from": 500, "to": 545, "type": "database" },
+    { "participant": "fastmcp", "from": 570, "to": 615, "type": "external" },
+    { "participant": "spring", "from": 635, "to": 680, "type": "external" }
+  ]
+}

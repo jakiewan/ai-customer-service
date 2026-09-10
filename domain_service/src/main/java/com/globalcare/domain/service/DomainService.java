@@ -139,7 +139,7 @@ public class DomainService {
     public CaseDraftResponse getCaseDraft(String draftId) {
         CaseDraftResponse response = draftsById.get(draftId);
         if (response == null) {
-            throw new DomainNotFoundException("Case Draft 不存在");
+            throw new DomainNotFoundException("Case Draft 不存在", "CASE_DRAFT_NOT_FOUND");
         }
         return response;
     }

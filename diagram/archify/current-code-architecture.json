@@ -1,0 +1,56 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "GlobalCare 当前代码架构",
+    "locale": "zh-CN",
+    "quality_profile": "showcase",
+    "repository": {
+      "url": "https://github.com/liukelly1993-ship-it/ai-customer-service.git",
+      "revision": "d5e3460ac689dd359d6ccde8faff46c71a2f4e52"
+    },
+    "viewBox": [1320, 700],
+    "views": [
+      { "id": "request-path", "label": "聊天主链路", "focus": ["vue", "fastapi", "conversation_service", "langgraph", "business_gateway", "fastmcp"], "note": "从 Vue SSE 请求进入 Agent 编排，再通过 MCP 执行只读业务查询。" },
+      { "id": "rag-path", "label": "模型与 RAG", "focus": ["langgraph", "agent_model", "policy_store", "postgres"], "note": "LangGraph 调用结构化意图模型与按市场过滤的政策检索。" },
+      { "id": "draft-path", "label": "Case Draft 写入", "focus": ["langgraph", "business_gateway", "spring_boot"], "note": "写入不暴露给模型，由应用节点经 HTTP 适配器调用 Spring Boot。" }
+    ]
+  },
+  "layout": {
+    "mode": "grid",
+    "origin": [40, 80],
+    "cols": 5,
+    "gapX": 70,
+    "gapY": 70,
+    "cellW": 180,
+    "cellH": 76
+  },
+  "components": [
+    { "id": "vue", "type": "frontend", "label": "Vue 3 Web Chat", "sublabel": "frontend/index.html · SSE 消费", "row": 1, "col": 0, "size": [180, 76], "sources": [{ "path": "frontend/index.html", "line": 619, "label": "Vue 入口" }] },
+    { "id": "fastapi", "type": "backend", "label": "FastAPI Agent API", "sublabel": "create_app() · REST / SSE", "row": 1, "col": 1, "size": [180, 76], "sources": [{ "path": "agent_service/app/main.py", "line": 88, "label": "应用工厂" }] },
+    { "id": "conversation_service", "type": "backend", "label": "ConversationService", "sublabel": "会话、事件、审计编排", "row": 1, "col": 2, "size": [180, 76], "sources": [{ "path": "agent_service/app/service.py", "line": 38, "label": "应用服务" }] },
+    { "id": "langgraph", "type": "backend", "label": "LangGraph Runtime", "sublabel": "状态图、条件路由、预算", "row": 1, "col": 3, "size": [180, 76], "sources": [{ "path": "agent_service/app/graph.py", "line": 79, "label": "图构建" }, { "path": "agent_service/app/graph.py", "line": 385, "label": "节点与边" }] },
+    { "id": "business_gateway", "type": "backend", "label": "BusinessGateway", "sublabel": "MCP 查询 / HTTP 草稿写入", "row": 1, "col": 4, "size": [180, 76], "sources": [{ "path": "agent_service/app/business.py", "line": 167, "label": "MCP 适配器" }, { "path": "agent_service/app/business.py", "line": 131, "label": "HTTP 适配器" }] },
+    { "id": "fastmcp", "type": "external", "label": "FastMCP Tools", "sublabel": "3 个只读 query_* 工具", "row": 3, "col": 3, "size": [180, 76], "sources": [{ "path": "agent_service/mcp_server.py", "line": 20, "label": "MCP 入口" }] },
+    { "id": "agent_model", "type": "cloud", "label": "AgentModel", "sublabel": "LangChain · MiniMax / 规则回退", "row": 0, "col": 2, "size": [180, 76], "sources": [{ "path": "agent_service/app/model_factory.py", "line": 24, "label": "模型工厂" }] },
+    { "id": "policy_store", "type": "backend", "label": "PolicyStore", "sublabel": "Document、Embedding、Retriever", "row": 0, "col": 3, "size": [180, 76], "sources": [{ "path": "agent_service/app/policy_store.py", "line": 90, "label": "政策检索" }] },
+    { "id": "postgres", "type": "database", "label": "PostgreSQL + pgvector", "sublabel": "政策向量 / 可选 Checkpoint", "row": 0, "col": 4, "size": [180, 76], "sources": [{ "path": "agent_service/app/checkpointer.py", "line": 13, "label": "Checkpoint" }, { "path": "agent_service/app/policy_store.py", "line": 118, "label": "PGVector" }] },
+    { "id": "memory_store", "type": "database", "label": "InMemoryStore", "sublabel": "会话、消息、草稿、审计", "row": 2, "col": 2, "size": [180, 76], "sources": [{ "path": "agent_service/app/store.py", "line": 56, "label": "内存仓储" }] },
+    { "id": "spring_boot", "type": "external", "label": "Spring Boot 模拟域服务", "sublabel": "查询事实 / Case Draft 幂等", "row": 3, "col": 4, "size": [180, 76], "sources": [{ "path": "domain_service/src/main/java/com/globalcare/domain/api/DomainController.java", "line": 21, "label": "Controller" }, { "path": "domain_service/src/main/java/com/globalcare/domain/service/DomainService.java", "line": 18, "label": "DomainService" }] }
+  ],
+  "boundaries": [
+    { "kind": "region", "label": "Agent Service 进程边界", "wraps": ["fastapi", "conversation_service", "langgraph", "agent_model", "policy_store", "business_gateway", "memory_store"], "pad": 28 }
+  ],
+  "connections": [
+    { "id": "vue-api", "from": "vue", "to": "fastapi", "label": "HTTP + SSE", "variant": "emphasis" },
+    { "id": "api-service", "from": "fastapi", "to": "conversation_service" },
+    { "id": "service-graph", "from": "conversation_service", "to": "langgraph", "label": "stream", "labelAt": [755, 351] },
+    { "id": "service-store", "from": "conversation_service", "to": "memory_store", "label": "会话 / 审计", "fromSide": "bottom", "toSide": "top", "labelAt": [630, 351] },
+    { "id": "graph-model", "from": "langgraph", "to": "agent_model", "label": "意图分类" },
+    { "id": "graph-policy", "from": "langgraph", "to": "policy_store", "label": "RAG", "fromSide": "top", "toSide": "bottom" },
+    { "id": "policy-postgres", "from": "policy_store", "to": "postgres", "label": "向量检索" },
+    { "id": "graph-business", "from": "langgraph", "to": "business_gateway", "label": "工具门禁", "variant": "security" },
+    { "id": "gateway-mcp", "from": "business_gateway", "to": "fastmcp", "label": "MCP 查询" },
+    { "id": "gateway-spring", "from": "business_gateway", "to": "spring_boot", "label": "HTTP 草稿", "variant": "emphasis", "fromSide": "bottom", "toSide": "top", "labelAt": [1130, 351] }
+  ]
+}

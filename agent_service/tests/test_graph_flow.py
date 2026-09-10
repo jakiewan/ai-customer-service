@@ -67,6 +67,7 @@ async def test_case_request_continues_when_user_supplies_missing_order_in_next_t
     first = await collect_events(service, conversation.conversation_id, "message-005", "我要申请售后维修")
     first_text = "".join(event["data"].get("delta", "") for event in first)
     assert "订单号或设备序列号" in first_text
+    assert not any(event["event"] == "case_draft_created" for event in first)
 
     second = await collect_events(
         service,
@@ -90,6 +91,58 @@ async def test_repair_status_returns_fact_instead_of_new_draft() -> None:
     output = "".join(event["data"].get("delta", "") for event in events)
     assert "维修处理中" in output
     assert not any(event["event"] == "case_draft_created" for event in events)
+
+
+@pytest.mark.asyncio
+async def test_case_request_does_not_reuse_identifier_from_status_intent() -> None:
+    app = create_app(Settings(demo_token="test-token"))
+    service = app.state.conversation_service
+    conversation = await service.create_conversation(
+        "test-token", CreateConversationRequest(channel="WEB_CHAT", market="MY", language="zh-CN")
+    )
+    await collect_events(
+        service,
+        conversation.conversation_id,
+        "message-011",
+        "查询维修进度，订单号 ORD-MY-2001",
+    )
+    next_events = await collect_events(
+        service,
+        conversation.conversation_id,
+        "message-012",
+        "我要申请售后维修",
+    )
+    output = "".join(event["data"].get("delta", "") for event in next_events)
+    assert "订单号或设备序列号" in output
+    assert not any(event["event"] == "case_draft_created" for event in next_events)
+
+
+@pytest.mark.asyncio
+async def test_existing_draft_does_not_override_unrelated_intents() -> None:
+    app = create_app(Settings(demo_token="test-token"))
+    service = app.state.conversation_service
+    conversation = await service.create_conversation(
+        "test-token", CreateConversationRequest(channel="WEB_CHAT", market="MY", language="zh-CN")
+    )
+    await collect_events(
+        service,
+        conversation.conversation_id,
+        "message-013",
+        "我要申请售后维修，订单号 ORD-MY-2001，手机无法开机",
+    )
+
+    unsupported = await collect_events(
+        service, conversation.conversation_id, "message-014", "智能手表维修"
+    )
+    unsupported_text = "".join(event["data"].get("delta", "") for event in unsupported)
+    assert any(event["event"] == "human_required" for event in unsupported)
+    assert "可靠的政策或业务事实" in unsupported_text
+    assert not any(event["event"] == "case_draft_created" for event in unsupported)
+
+    general = await collect_events(service, conversation.conversation_id, "message-015", "你好")
+    general_text = "".join(event["data"].get("delta", "") for event in general)
+    assert "查询保修政策" in general_text
+    assert not any(event["event"] == "case_draft_created" for event in general)
 
 
 @pytest.mark.asyncio

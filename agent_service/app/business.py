@@ -200,17 +200,36 @@ class McpBusinessGateway:
         try:
             result = await tool.ainvoke(payload)
             if isinstance(result, dict):
+                if result.get("isError"):
+                    raise BusinessGatewayError(
+                        str(result.get("message") or "MCP 工具返回错误"),
+                        code=str(result.get("code") or "TOOL_UNAVAILABLE"),
+                        retryable=False,
+                    )
                 return result
             if isinstance(result, list):
                 text_blocks = [item.get("text") for item in result if isinstance(item, dict) and item.get("text")]
                 if text_blocks:
+                    text = str(text_blocks[0])
                     try:
-                        decoded = json.loads(text_blocks[0])
+                        decoded = json.loads(text)
                         if isinstance(decoded, dict):
                             return decoded
                     except json.JSONDecodeError:
-                        pass
+                        if text.lower().startswith("error calling tool"):
+                            message = text.split(":", 1)[-1].strip() or "MCP 工具调用失败"
+                            if tool_name == ToolName.QUERY_ORDER:
+                                code = "ORDER_NOT_FOUND" if "订单不存在" in message else "TOOL_UNAVAILABLE"
+                            elif tool_name == ToolName.QUERY_DEVICE:
+                                code = "DEVICE_NOT_FOUND" if "设备不存在" in message else "TOOL_UNAVAILABLE"
+                            else:
+                                code = "ORDER_NOT_FOUND" if "订单不存在" in message else (
+                                    "DEVICE_NOT_FOUND" if "设备不存在" in message else "TOOL_UNAVAILABLE"
+                                )
+                            raise BusinessGatewayError(message, code=code, retryable=False)
             return {"result": result}
+        except BusinessGatewayError:
+            raise
         except Exception as exc:
             raise BusinessGatewayError("MCP 工具调用失败", code="TOOL_UNAVAILABLE") from exc
 

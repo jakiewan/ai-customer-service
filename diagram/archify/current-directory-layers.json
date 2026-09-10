@@ -1,0 +1,56 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "GlobalCare 代码目录与分层",
+    "locale": "zh-CN",
+    "quality_profile": "showcase",
+    "repository": {
+      "url": "https://github.com/liukelly1993-ship-it/ai-customer-service.git",
+      "revision": "d5e3460ac689dd359d6ccde8faff46c71a2f4e52"
+    },
+    "viewBox": [1360, 800],
+    "views": [
+      { "id": "entry-layer", "label": "入口层", "focus": ["frontend", "api_entry", "mcp_entry", "java_domain"], "note": "四个运行入口分别承接网页、Agent API、MCP 工具和模拟业务接口。" },
+      { "id": "application-layer", "label": "应用编排层", "focus": ["conversation_service", "graph_runtime"], "note": "ConversationService 编排请求与事件，GraphService 承担状态流转。" },
+      { "id": "domain-adapter-layer", "label": "领域与适配层", "focus": ["model_intent", "rag_policy", "business_permissions", "state_persistence"], "note": "模型、RAG、工具权限和状态存储保持边界清晰。" }
+    ]
+  },
+  "layout": {
+    "mode": "grid",
+    "origin": [70, 80],
+    "cols": 4,
+    "gapX": 85,
+    "gapY": 90,
+    "cellW": 245,
+    "cellH": 84
+  },
+  "components": [
+    { "id": "frontend", "type": "frontend", "label": "frontend/", "sublabel": "index.html · Vue 3 CDN + SSE", "row": 0, "col": 0, "size": [245, 84], "sources": [{ "path": "frontend/index.html", "line": 619, "label": "页面入口" }] },
+    { "id": "api_entry", "type": "backend", "label": "agent_service/app/main.py", "sublabel": "FastAPI 工厂、路由、鉴权、依赖装配", "row": 0, "col": 1, "size": [245, 84], "sources": [{ "path": "agent_service/app/main.py", "line": 88, "label": "create_app" }] },
+    { "id": "mcp_entry", "type": "external", "label": "agent_service/mcp_server.py", "sublabel": "FastMCP streamable-http 入口", "row": 0, "col": 2, "size": [245, 84], "sources": [{ "path": "agent_service/mcp_server.py", "line": 20, "label": "FastMCP" }] },
+    { "id": "java_domain", "type": "external", "label": "domain_service/", "sublabel": "Spring Boot API、Service、DTO", "row": 0, "col": 3, "size": [245, 84], "sources": [{ "path": "domain_service/src/main/java/com/globalcare/domain/GlobalCareDomainApplication.java", "line": 6, "label": "Java 入口" }] },
+    { "id": "conversation_service", "type": "backend", "label": "service.py", "sublabel": "用例编排、SSE 事件、审计", "row": 1, "col": 1, "size": [245, 84], "sources": [{ "path": "agent_service/app/service.py", "line": 38, "label": "ConversationService" }] },
+    { "id": "graph_runtime", "type": "backend", "label": "graph.py", "sublabel": "LangGraph 节点、条件边、运行预算", "row": 1, "col": 2, "size": [245, 84], "sources": [{ "path": "agent_service/app/graph.py", "line": 79, "label": "build_graph" }] },
+    { "id": "model_intent", "type": "cloud", "label": "model_factory.py + intent.py", "sublabel": "结构化模型路由 + 确定性回退", "row": 2, "col": 0, "size": [245, 84], "sources": [{ "path": "agent_service/app/model_factory.py", "line": 24, "label": "AgentModel" }, { "path": "agent_service/app/intent.py", "line": 97, "label": "意图规则" }] },
+    { "id": "rag_policy", "type": "backend", "label": "policy_store.py + data/policies/", "sublabel": "Document、Embedding、PGVector、政策正文", "row": 2, "col": 3, "size": [245, 84], "sources": [{ "path": "agent_service/app/policy_store.py", "line": 90, "label": "PolicyStore" }, { "path": "agent_service/data/policies/policy_my.md", "line": 1, "label": "政策数据" }] },
+    { "id": "business_permissions", "type": "security", "label": "business.py + permissions.py", "sublabel": "业务适配器、错误归一化、工具白名单", "row": 2, "col": 2, "size": [245, 84], "sources": [{ "path": "agent_service/app/business.py", "line": 19, "label": "Gateway Port" }, { "path": "agent_service/app/permissions.py", "line": 8, "label": "权限门禁" }] },
+    { "id": "state_persistence", "type": "database", "label": "state.py + store.py + checkpointer.py", "sublabel": "State Schema、内存仓储、Postgres Checkpoint", "row": 2, "col": 1, "size": [245, 84], "sources": [{ "path": "agent_service/app/state.py", "line": 5, "label": "状态结构" }, { "path": "agent_service/app/store.py", "line": 56, "label": "仓储实现" }, { "path": "agent_service/app/checkpointer.py", "line": 13, "label": "Checkpoint" }] },
+    { "id": "tests_scripts", "type": "messagebus", "label": "agent_service/tests/ + scripts/", "sublabel": "单测、pgvector、HTTP E2E、边界循环", "row": 3, "col": 1, "size": [245, 84], "sources": [{ "path": "agent_service/tests/test_regression_matrix.py", "line": 1, "label": "回归矩阵" }, { "path": "scripts/http_e2e_smoke.py", "line": 1, "label": "HTTP E2E" }] },
+    { "id": "docs_assets", "type": "external", "label": "*.md + diagram/", "sublabel": "需求、技术方案、测试报告、架构资产", "row": 3, "col": 2, "size": [245, 84], "sources": [{ "path": "技术方案.md", "line": 1, "label": "方案文档" }, { "path": "测试说明与报告.md", "line": 1, "label": "测试报告" }] }
+  ],
+  "boundaries": [
+    { "kind": "region", "label": "入口与对接层", "wraps": ["frontend", "api_entry", "mcp_entry", "java_domain"], "pad": 24 },
+    { "kind": "region", "label": "应用编排层", "wraps": ["conversation_service", "graph_runtime"], "pad": 24 },
+    { "kind": "region", "label": "领域能力与基础设施层", "wraps": ["model_intent", "rag_policy", "business_permissions", "state_persistence"], "pad": 24 },
+    { "kind": "region", "label": "验证与说明层", "wraps": ["tests_scripts", "docs_assets"], "pad": 24 }
+  ],
+  "connections": [
+    { "id": "frontend-api", "from": "frontend", "to": "api_entry", "label": "REST / SSE", "variant": "emphasis" },
+    { "id": "api-service", "from": "api_entry", "to": "conversation_service", "label": "调用", "fromSide": "bottom", "toSide": "top", "labelAt": [523, 178] },
+    { "id": "service-graph", "from": "conversation_service", "to": "graph_runtime", "label": "状态流" },
+    { "id": "service-state", "from": "conversation_service", "to": "state_persistence", "label": "会话状态", "fromSide": "bottom", "toSide": "top", "labelAt": [523, 352] },
+    { "id": "graph-rag", "from": "graph_runtime", "to": "rag_policy" },
+    { "id": "graph-business", "from": "graph_runtime", "to": "business_permissions", "label": "工具门禁", "variant": "security", "fromSide": "bottom", "toSide": "top", "labelAt": [853, 352] }
+  ]
+}
