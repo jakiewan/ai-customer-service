@@ -78,3 +78,12 @@ logs/
 # 含个人信息的简历产物
 experience/*.pdf
 experience/*.docx
+
+# 个人资料、求职记录和本机元数据仅保留在本地
+/experience/
+/.learnings/
+/.vscode/
+/本需求标识.md
+**/*简历*
+**/*resume*
+**/*证件照*
