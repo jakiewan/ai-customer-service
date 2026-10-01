@@ -19,7 +19,7 @@ from .constants import (
     ToolName,
     ToolStatus,
 )
-from .intent import issue_summary
+from .intent import extract_context, issue_summary
 from .model_factory import AgentModel
 from .permissions import assert_application_write_allowed, assert_model_tool_allowed
 from .policy_store import PolicyStore
@@ -88,6 +88,9 @@ def build_graph(
     """构造单一售后 Agent 状态图；写入节点与模型工具权限在应用层固定。"""
 
     async def classify_node(state: AfterSalesState) -> dict[str, Any]:
+        previous_intent = state.get("intent")
+        message = _last_user_message(state)
+        explicit = extract_context(message)
         is_case_continuation = (
             state.get("intent") == Intent.CASE_REQUEST.value
             and "order_id_or_serial_number" in state.get("missing_fields", [])
@@ -98,18 +101,39 @@ def build_graph(
             current_language=state.get("language"),
         )
         # 用户补订单号/SN 时延续上一轮受理，不把“无法开机”重新当成独立排查咨询。
-        if is_case_continuation and (decision.order_id or decision.serial_number):
+        if is_case_continuation and (decision.order_id or decision.serial_number) and decision.intent in {
+            Intent.GENERAL, Intent.TROUBLESHOOTING, Intent.CASE_REQUEST
+        }:
             decision = decision.model_copy(update={"intent": Intent.CASE_REQUEST})
+        # 查询进度的标识不能默认为用户本轮同意报修的设备。
+        reuse_identity = previous_intent == decision.intent.value or (
+            previous_intent == Intent.TROUBLESHOOTING.value and decision.intent == Intent.CASE_REQUEST
+        )
+        order_id = decision.order_id or (state.get("order_id") if reuse_identity else None)
+        serial_number = decision.serial_number or (state.get("serial_number") if reuse_identity else None)
+        if explicit.order_id and explicit.order_id != state.get("order_id"):
+            serial_number = decision.serial_number
+        if explicit.serial_number and explicit.serial_number != state.get("serial_number"):
+            order_id = decision.order_id
+        draft = state.get("case_draft") or {}
+        different_device = bool(
+            (explicit.order_id and explicit.order_id != draft.get("order_id"))
+            or (explicit.serial_number and explicit.serial_number != draft.get("serial_number"))
+        )
+        preserve_symptom = decision.intent == Intent.CASE_REQUEST and reuse_identity and decision.issue_category == "general_issue"
         return _step(
             state,
             intent=decision.intent.value,
             market=decision.market.value if decision.market else state.get("market"),
             language=decision.language.value if decision.language else state.get("language"),
-            order_id=decision.order_id or state.get("order_id"),
-            serial_number=decision.serial_number or state.get("serial_number"),
+            order_id=order_id,
+            serial_number=serial_number,
             product_model=decision.product_model or state.get("product_model"),
-            issue_category=decision.issue_category,
-            issue_summary=issue_summary(_last_user_message(state)),
+            issue_category=state.get("issue_category") if preserve_symptom else decision.issue_category,
+            issue_summary=state.get("issue_summary") if preserve_symptom else issue_summary(message),
+            case_draft=None if different_device else state.get("case_draft"),
+            case_draft_id=None if different_device else state.get("case_draft_id"),
+            missing_fields=[],
             phase=AgentPhase.AI_ACTIVE.value,
             conversation_status=ConversationStatus.AI_ACTIVE.value,
         )
@@ -136,7 +160,7 @@ def build_graph(
                 phase=AgentPhase.AI_CANNOT_RESOLVE.value,
                 conversation_status=ConversationStatus.AI_CANNOT_RESOLVE.value,
             )
-        evidence = policy_store.retrieve(
+        evidence = [] if policy_store.is_unsupported(_last_user_message(state)) else policy_store.retrieve(
             state.get("issue_summary") or _last_user_message(state), market, top_k=3
         )
         if not evidence:
@@ -324,7 +348,7 @@ def build_graph(
             reply = f"根据{evidence[0]['title']}（版本 {evidence[0]['version']}），当前市场适用的手机有限保修期为 12 个月，以订单和购买凭证核验结果为准。"
         elif state.get("intent") == Intent.REPAIR_STATUS.value:
             reply = _status_text((state.get("business_results") or [{}])[0])
-        elif state.get("case_draft_id"):
+        elif state.get("intent") == Intent.CASE_REQUEST.value and state.get("case_draft_id"):
             reply = (
                 f"已根据订单和政策信息保存 Case Draft（{state['case_draft_id']}）。"
                 "Agent 侧任务已完成；正式 Case 和维修工单由既有售后系统继续处理。"
@@ -340,6 +364,8 @@ def build_graph(
 
     def after_classify(state: AfterSalesState) -> Literal["collect_info", "retrieve_policy", "query_business", "reuse_draft", "render_response"]:
         intent = state.get("intent")
+        if policy_store.is_unsupported(_last_user_message(state)):
+            return "retrieve_policy"
         if intent == Intent.GENERAL.value:
             return "render_response"
         if intent == Intent.CASE_REQUEST.value and state.get("case_draft_id"):

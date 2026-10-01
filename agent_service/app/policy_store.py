@@ -90,6 +90,10 @@ def _load_frontmatter(path: Path) -> Document:
 class PolicyStore:
     """政策检索端口。默认内存向量库，配置 pgvector 时使用 PostgreSQL。"""
 
+    @staticmethod
+    def is_unsupported(query: str) -> bool:
+        return any(term.lower() in query.lower() for term in (*UNSUPPORTED_POLICY_TERMS, *UNSUPPORTED_PRODUCT_TERMS))
+
     def __init__(
         self,
         policy_dir: str | Path,
