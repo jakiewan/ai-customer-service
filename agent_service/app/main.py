@@ -11,6 +11,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
 
+from .auth import Principal, authenticate
 from .business import build_business_gateway
 from .checkpointer import open_checkpointer, to_psycopg_dsn
 from .config import Settings, get_settings
@@ -18,6 +19,7 @@ from .constants import ErrorCode
 from .graph import GraphService, build_graph
 from .model_factory import AgentModel
 from .policy_store import PolicyStore
+from .postgres_store import PostgresStore
 from .schemas import (
     ApiResponse,
     AuditEventView,
@@ -98,7 +100,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         allow_origins=allowed_origins,
         allow_credentials=False,
         allow_methods=["GET", "POST", "OPTIONS"],
-        allow_headers=["Content-Type", "X-Demo-Token", "X-Request-Id"],
+        allow_headers=["Content-Type", "Authorization", "X-Demo-Token", "X-Request-Id"],
     )
     policy_dir = Path(app_settings.policy_dir)
     if not policy_dir.is_absolute():
@@ -124,20 +126,24 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         base_url=app_settings.business_base_url,
         timeout_seconds=app_settings.business_timeout_seconds,
         mcp_url=app_settings.mcp_url,
+        mcp_token=app_settings.mcp_token,
     )
     draft_gateway = build_business_gateway(
         app_settings.business_mode,
         base_url=app_settings.business_base_url,
         timeout_seconds=app_settings.business_timeout_seconds,
         mcp_url=app_settings.mcp_url,
+        mcp_token=app_settings.mcp_token,
     )
-    store = InMemoryStore()
+    store = (PostgresStore(app_settings.database_url, app_settings.message_lock_timeout_seconds)
+             if app_settings.persistence_mode == "postgres" else InMemoryStore(app_settings.message_lock_timeout_seconds))
     graph_kwargs = {
         "model": model,
         "policy_store": policy_store,
         "query_gateway": query_gateway,
         "draft_gateway": draft_gateway,
         "max_steps": app_settings.max_graph_steps,
+        "max_tool_calls": app_settings.max_tool_calls,
     }
     graph = build_graph(**graph_kwargs)
     conversation_service = ConversationService(
@@ -145,6 +151,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         graph_service=GraphService(
             graph, max_steps=app_settings.max_graph_steps, token_budget=app_settings.token_budget
         ),
+        run_timeout_seconds=app_settings.agent_run_timeout_seconds,
     )
     app.state.settings = app_settings
     app.state.policy_store = policy_store
@@ -153,22 +160,27 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(_: FastAPI):
-        async with open_checkpointer(app_settings.checkpointer_mode, app_settings.database_url) as checkpointer:
-            if app_settings.checkpointer_mode.lower() == "postgres":
-                conversation_service.graph_service.graph = build_graph(**graph_kwargs, checkpointer=checkpointer)
-                app.state.checkpointer_state = "up"
-            else:
-                app.state.checkpointer_state = "memory"
-            yield
+        try:
+            if isinstance(store, PostgresStore):
+                await store.open()
+            async with open_checkpointer(app_settings.checkpointer_mode, app_settings.database_url) as checkpointer:
+                if app_settings.checkpointer_mode.lower() == "postgres":
+                    conversation_service.graph_service.graph = build_graph(**graph_kwargs, checkpointer=checkpointer)
+                    app.state.checkpointer_state = "up"
+                else:
+                    app.state.checkpointer_state = "memory"
+                yield
+        finally:
+            if isinstance(store, PostgresStore):
+                await store.close()
 
     app.router.lifespan_context = lifespan
 
     async def demo_token_dependency(
         x_demo_token: Annotated[str | None, Header(alias="X-Demo-Token")] = None,
-    ) -> str:
-        if not x_demo_token or x_demo_token != app_settings.demo_token:
-            raise HTTPException(status_code=401, detail=ErrorCode.UNAUTHORIZED.value)
-        return x_demo_token
+        authorization: Annotated[str | None, Header(alias="Authorization")] = None,
+    ) -> Principal:
+        return authenticate(app_settings, authorization, x_demo_token)
 
     @app.exception_handler(RequestValidationError)
     async def validation_exception_handler(request: Request, _: RequestValidationError):
@@ -229,9 +241,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def create_conversation(
         request: Request,
         body: CreateConversationRequest,
-        token: str = Depends(demo_token_dependency),
+        token: Principal = Depends(demo_token_dependency),
     ):
-        result = await conversation_service.create_conversation(token, body)
+        result = await conversation_service.create_conversation(token.subject_key, body, actor_context=token.actor_context)
         return ApiResponse(data=result, trace_id=_trace_id(request))
 
     @app.post(
@@ -243,13 +255,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         request: Request,
         conversation_id: UUID,
         body: MessageRequest,
-        token: str = Depends(demo_token_dependency),
+        token: Principal = Depends(demo_token_dependency),
     ):
-        await store.get_conversation(conversation_id, token)
+        await store.get_conversation(conversation_id, token.subject_key)
         trace_id = _trace_id(request)
 
         async def event_stream():
-            async for event in conversation_service.stream_message(conversation_id, token, body, trace_id):
+            async for event in conversation_service.stream_message(conversation_id, token.subject_key, body, trace_id):
                 yield f"event: {event['event']}\ndata: {json.dumps(event['data'], ensure_ascii=False)}\n\n"
 
         return StreamingResponse(
@@ -262,9 +274,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def get_conversation(
         request: Request,
         conversation_id: UUID,
-        token: str = Depends(demo_token_dependency),
+        token: Principal = Depends(demo_token_dependency),
     ):
-        result = await conversation_service.conversation_view(conversation_id, token)
+        result = await conversation_service.conversation_view(conversation_id, token.subject_key)
         return ApiResponse(data=result, trace_id=_trace_id(request))
 
     @app.get(
@@ -275,18 +287,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def get_conversation_audit(
         request: Request,
         conversation_id: UUID,
-        token: str = Depends(demo_token_dependency),
+        token: Principal = Depends(demo_token_dependency),
     ):
-        result = await conversation_service.audit_views(conversation_id, token)
+        result = await conversation_service.audit_views(conversation_id, token.subject_key)
         return ApiResponse(data=result, trace_id=_trace_id(request))
 
     @app.get("/api/v1/case-drafts/{case_draft_id}", response_model=ApiResponse[CaseDraftView], tags=["case-draft"])
     async def get_case_draft(
         request: Request,
         case_draft_id: UUID,
-        token: str = Depends(demo_token_dependency),
+        token: Principal = Depends(demo_token_dependency),
     ):
-        result = await conversation_service.draft_view(case_draft_id, token)
+        result = await conversation_service.draft_view(case_draft_id, token.subject_key)
         return ApiResponse(data=result, trace_id=_trace_id(request))
 
     return app

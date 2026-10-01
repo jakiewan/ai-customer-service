@@ -83,6 +83,7 @@ def build_graph(
     query_gateway: BusinessGateway,
     draft_gateway: BusinessGateway,
     max_steps: int = 12,
+    max_tool_calls: int = 3,
     checkpointer: Any | None = None,
 ):
     """构造单一售后 Agent 状态图；写入节点与模型工具权限在应用层固定。"""
@@ -183,8 +184,13 @@ def build_graph(
         tool_events: list[dict[str, Any]] = []
         results: list[dict[str, Any]] = []
         intent = state.get("intent")
+        tool_count = int(state.get("tool_call_count", 0))
 
         async def call_tool(tool_name: ToolName, payload: dict[str, Any]) -> dict[str, Any]:
+            nonlocal tool_count
+            if tool_count >= max_tool_calls:
+                raise AgentRunError("Agent 业务工具调用数已达到上限")
+            tool_count += 1
             assert_model_tool_allowed(tool_name.value)
             tool_events.append(
                 {"tool_name": tool_name.value, "status": ToolStatus.RUNNING.value, "trace_id": str(uuid4())}
@@ -198,6 +204,12 @@ def build_graph(
                     result = await query_gateway.query_repair_status(
                         order_id=payload.get("order_id"), serial_number=payload.get("serial_number")
                     )
+                # 身份源是签名验证后的 JWT，不是用户在消息中自报的客户号。
+                if state.get("authorized_customer_id") and (
+                    result.get("customer_id") != state["authorized_customer_id"]
+                    or result.get("tenant_id") != state.get("authorized_tenant_id")
+                ):
+                    raise BusinessGatewayError("无权访问该业务记录", code="BUSINESS_FORBIDDEN", retryable=False)
                 tool_events[-1]["status"] = ToolStatus.SUCCESS.value
                 return result
             except BusinessGatewayError as exc:
@@ -224,6 +236,7 @@ def build_graph(
                 state,
                 business_results=results,
                 tool_events=tool_events,
+                tool_call_count=tool_count,
                 human_required=True,
                 human_reason=str(exc),
                 error_code=exc.code,
@@ -240,6 +253,7 @@ def build_graph(
                 state,
                 business_results=results,
                 tool_events=tool_events,
+                tool_call_count=tool_count,
                 human_required=True,
                 human_reason="订单所属市场与请求市场不一致",
                 error_code="MARKET_MISMATCH",
@@ -250,6 +264,7 @@ def build_graph(
             state,
             business_results=results,
             tool_events=tool_events,
+            tool_call_count=tool_count,
             market=inferred_market,
             product_model=state.get("product_model") or (results[0].get("product_model") if results else None),
             customer_id=results[0].get("customer_id") if results else None,
@@ -298,6 +313,9 @@ def build_graph(
 
     async def create_case_draft_node(state: AfterSalesState) -> dict[str, Any]:
         assert_application_write_allowed(ToolName.CREATE_CASE_DRAFT.value)
+        if int(state.get("tool_call_count", 0)) >= max_tool_calls:
+            raise AgentRunError("Agent 业务工具调用数已达到上限")
+        tool_count = int(state.get("tool_call_count", 0)) + 1
         try:
             result = await draft_gateway.create_case_draft(state["case_draft"])
         except BusinessGatewayError as exc:
@@ -306,6 +324,7 @@ def build_graph(
                 human_required=True,
                 human_reason=str(exc),
                 error_code=exc.code,
+                tool_call_count=tool_count,
                 phase=AgentPhase.AI_CANNOT_RESOLVE.value,
                 conversation_status=ConversationStatus.AI_CANNOT_RESOLVE.value,
             )
@@ -317,6 +336,7 @@ def build_graph(
             phase=AgentPhase.CASE_DRAFT_CREATED.value,
             conversation_status=ConversationStatus.CASE_DRAFT_CREATED.value,
             review_required=True,
+            tool_call_count=tool_count,
         )
 
     async def reuse_draft_node(state: AfterSalesState) -> dict[str, Any]:
@@ -409,15 +429,22 @@ def build_graph(
         return "render_response"
 
     graph = StateGraph(AfterSalesState)
-    graph.add_node("classify_intent", classify_node)
-    graph.add_node("collect_info", collect_info_node)
-    graph.add_node("retrieve_policy", retrieve_policy_node)
-    graph.add_node("query_business", query_business_node)
-    graph.add_node("build_case_draft", build_case_draft_node)
-    graph.add_node("validate_draft", validate_draft_node)
-    graph.add_node("create_case_draft", create_case_draft_node)
-    graph.add_node("reuse_draft", reuse_draft_node)
-    graph.add_node("render_response", render_response_node)
+    def bounded(node):
+        async def run(state):
+            # 门禁必须在节点执行前生效，不能写下游后才发现已超限。
+            if int(state.get("step_count", 0)) >= max_steps:
+                raise AgentRunError("Agent 最大步骤数已达到上限")
+            return await node(state)
+        return run
+
+    for name, node in (
+        ("classify_intent", classify_node), ("collect_info", collect_info_node),
+        ("retrieve_policy", retrieve_policy_node), ("query_business", query_business_node),
+        ("build_case_draft", build_case_draft_node), ("validate_draft", validate_draft_node),
+        ("create_case_draft", create_case_draft_node), ("reuse_draft", reuse_draft_node),
+        ("render_response", render_response_node),
+    ):
+        graph.add_node(name, bounded(node))
     graph.add_edge(START, "classify_intent")
     graph.add_conditional_edges("classify_intent", after_classify)
     graph.add_conditional_edges("collect_info", after_collect)

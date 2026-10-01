@@ -1,5 +1,8 @@
 import asyncio
+import hashlib
+import json
 import logging
+from contextlib import aclosing
 from collections.abc import AsyncIterator
 from typing import Any
 from uuid import UUID
@@ -17,7 +20,8 @@ from .schemas import (
     PolicyEvidence,
     utc_now,
 )
-from .store import InMemoryStore
+from .store import InMemoryStore, StoreRequestError
+from .postgres_store import PostgresStore
 
 logger = logging.getLogger(__name__)
 
@@ -36,16 +40,18 @@ NODE_LABELS = {
 
 
 class ConversationService:
-    def __init__(self, *, store: InMemoryStore, graph_service: GraphService) -> None:
+    def __init__(self, *, store: InMemoryStore | PostgresStore, graph_service: GraphService, run_timeout_seconds: float = 60) -> None:
         self.store = store
         self.graph_service = graph_service
+        self.run_timeout_seconds = run_timeout_seconds
 
-    async def create_conversation(self, token: str, request: CreateConversationRequest) -> ConversationResponse:
+    async def create_conversation(self, token: str, request: CreateConversationRequest, *, actor_context: dict[str, str] | None = None) -> ConversationResponse:
         record = await self.store.create_conversation(
             token=token,
             channel=request.channel,
             market=request.market.value if request.market else None,
             language=request.language.value if request.language else None,
+            actor_context=actor_context,
         )
         return ConversationResponse(
             conversation_id=record.conversation_id,
@@ -59,9 +65,30 @@ class ConversationService:
     async def stream_message(
         self, conversation_id: UUID, token: str, request: MessageRequest, trace_id: str
     ) -> AsyncIterator[dict[str, Any]]:
+        try:
+            async with self.store.message_lock(conversation_id, token):
+                async with asyncio.timeout(self.run_timeout_seconds):
+                    async with aclosing(self._stream_message(conversation_id, token, request, trace_id)) as events:
+                        async for event in events:
+                            yield event
+        except StoreRequestError as exc:
+            yield {"event": "error", "data": {"code": exc.code, "message": str(exc), "retryable": exc.retryable, "trace_id": trace_id}}
+            yield {"event": "done", "data": {"status": "FAILED", "trace_id": trace_id}}
+        except TimeoutError:
+            yield {"event": "error", "data": {"code": "AGENT_RUN_TIMEOUT", "message": "Agent 本轮处理超时，结果需核对后再继续", "retryable": False, "trace_id": trace_id}}
+            yield {"event": "done", "data": {"status": "FAILED", "trace_id": trace_id}}
+        except Exception as exc:
+            logger.error("消息处理异常: trace_id=%s type=%s", trace_id, type(exc).__name__)
+            yield {"event": "error", "data": {"code": "INTERNAL_ERROR", "message": "服务暂时不可用，结果需核对后再继续", "retryable": False, "trace_id": trace_id}}
+            yield {"event": "done", "data": {"status": "FAILED", "trace_id": trace_id}}
+
+    async def _stream_message(
+        self, conversation_id: UUID, token: str, request: MessageRequest, trace_id: str
+    ) -> AsyncIterator[dict[str, Any]]:
         record = await self.store.get_conversation(conversation_id, token)
         duplicate = await self.store.append_user_message(
-            conversation_id, token, request.client_message_id, request.message
+            conversation_id, token, request.client_message_id, request.message,
+            request_fingerprint=hashlib.sha256(json.dumps(request.model_dump(mode="json"), sort_keys=True).encode()).hexdigest(),
         )
         if duplicate is not None:
             await self._audit(
@@ -100,6 +127,7 @@ class ConversationService:
         yield {"event": "status", "data": {"phase": "AI_ACTIVE", "message": "正在理解你的售后问题"}}
         final_state: dict[str, Any] | None = None
         created_draft = False
+        draft_event: dict[str, Any] | None = None
         evidence_sent: set[str] = set()
         try:
             async for node_name, patch, current_state in self.graph_service.stream(
@@ -164,7 +192,7 @@ class ConversationService:
                         "CASE_DRAFT_CREATED",
                         {"case_draft_id": patch["case_draft_id"], "status": "DRAFT_CREATED"},
                     )
-                    yield {
+                    draft_event = {
                         "event": "case_draft_created",
                         "data": {
                         "case_draft_id": patch["case_draft_id"],
@@ -175,55 +203,20 @@ class ConversationService:
                         "idempotent_replay": bool(draft.get("idempotent_replay", False)),
                         },
                     }
-        except AgentBudgetError as exc:
-            logger.error("Agent 预算门禁触发: trace_id=%s error=%s", trace_id, exc)
-            yield {
-                "event": "error",
-                "data": {
-                    "code": ErrorCode.AGENT_BUDGET_EXCEEDED.value,
-                    "message": str(exc),
-                    "retryable": True,
-                },
-            }
-            yield {"event": "done", "data": {"status": ConversationStatus.FAILED.value, "trace_id": trace_id}}
-            return
-        except AgentRunError as exc:
-            logger.error("Agent 运行上限触发: trace_id=%s error=%s", trace_id, exc)
-            yield {
-                "event": "error",
-                "data": {
-                    "code": ErrorCode.AGENT_LIMIT_EXCEEDED.value,
-                    "message": str(exc),
-                    "retryable": True,
-                },
-            }
-            yield {"event": "done", "data": {"status": ConversationStatus.FAILED.value, "trace_id": trace_id}}
-            return
-        except Exception as exc:  # noqa: BLE001 - SSE 入口必须屏蔽内部异常并返回统一错误。
-            logger.error("Agent 运行失败: trace_id=%s error=%s", trace_id, exc)
-            yield {
-                "event": "error",
-                "data": {
-                    "code": ErrorCode.INTERNAL_ERROR.value,
-                    "message": "Agent 暂时无法处理，请稍后重试",
-                    "retryable": True,
-                },
-            }
-            yield {"event": "done", "data": {"status": ConversationStatus.FAILED.value, "trace_id": trace_id}}
+        except Exception as exc:
+            logger.error("Agent 运行失败: trace_id=%s type=%s", trace_id, type(exc).__name__)
+            code = (ErrorCode.AGENT_BUDGET_EXCEEDED if isinstance(exc, AgentBudgetError) else
+                    ErrorCode.AGENT_LIMIT_EXCEEDED if isinstance(exc, AgentRunError) else ErrorCode.INTERNAL_ERROR)
+            message = str(exc) if isinstance(exc, AgentRunError) else "Agent 暂时无法处理，结果需核对后再继续"
+            async for event in self._failure(conversation_id, token, request.client_message_id, trace_id, code.value, message):
+                yield event
             return
 
         if final_state is None:
-            yield {"event": "error", "data": {"code": ErrorCode.INTERNAL_ERROR.value, "message": "Agent 没有最终状态", "retryable": True}}
+            async for event in self._failure(conversation_id, token, request.client_message_id, trace_id, "INTERNAL_ERROR", "Agent 没有最终状态"):
+                yield event
             return
         reply = str(final_state.get("reply") or "")
-        for chunk in _chunks(reply, 28):
-            await asyncio.sleep(0)
-            yield {"event": "token", "data": {"delta": chunk}}
-        if final_state.get("human_required"):
-            yield {
-                "event": "human_required",
-                "data": {"reason": final_state.get("human_reason") or "当前 Agent 无法可靠处理"},
-            }
         result = {
             "reply": reply,
             "citations": final_state.get("citations", []),
@@ -242,13 +235,12 @@ class ConversationService:
             citations=final_state.get("citations", []),
             result=result,
         )
-        await self._audit(
-            conversation_id,
-            token,
-            trace_id,
-            "AGENT_RUN_COMPLETED",
-            {"status": result["status"], "human_required": result["human_required"]},
-        )
+        if draft_event:
+            yield draft_event
+        for chunk in _chunks(reply, 28):
+            yield {"event": "token", "data": {"delta": chunk}}
+        if final_state.get("human_required"):
+            yield {"event": "human_required", "data": {"reason": final_state.get("human_reason") or "当前 Agent 无法可靠处理"}}
         yield {
             "event": "done",
             "data": {
@@ -261,6 +253,10 @@ class ConversationService:
 
     @staticmethod
     def _replay_result(result: dict[str, Any], trace_id: str) -> Any:
+        if result.get("error"):
+            yield {"event": "error", "data": {**result["error"], "trace_id": trace_id}}
+            yield {"event": "done", "data": {"status": "FAILED", "trace_id": trace_id}}
+            return
         reply = str(result.get("reply", ""))
         for chunk in _chunks(reply, 28):
             yield {"event": "token", "data": {"delta": chunk}}
@@ -281,6 +277,17 @@ class ConversationService:
         if result.get("human_required"):
             yield {"event": "human_required", "data": {"reason": "上次请求未能可靠处理"}}
         yield {"event": "done", "data": {"status": result.get("status", "AI_ACTIVE"), "trace_id": trace_id}}
+
+    async def _failure(self, conversation_id: UUID, token: str, message_id: str, trace_id: str, code: str, message: str):
+        previous = await self.store.get_conversation(conversation_id, token)
+        error = {"code": code, "message": message, "retryable": False, "trace_id": trace_id}
+        result = {"reply": message, "status": "FAILED", "trace_id": trace_id, "error": error}
+        await self.store.save_agent_result(
+            conversation_id, token, client_message_id=message_id,
+            state={**previous.state, "conversation_status": "FAILED"}, reply=message, citations=[], result=result,
+        )
+        yield {"event": "error", "data": error}
+        yield {"event": "done", "data": {"status": "FAILED", "trace_id": trace_id}}
 
     async def conversation_view(self, conversation_id: UUID, token: str) -> ConversationView:
         record = await self.store.get_conversation(conversation_id, token)

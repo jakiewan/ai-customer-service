@@ -9,6 +9,8 @@ class AfterSalesState(TypedDict, total=False):
     language: str | None
     intent: str | None
     customer_id: str | None
+    authorized_customer_id: str | None
+    authorized_tenant_id: str | None
     order_id: str | None
     serial_number: str | None
     product_model: str | None
@@ -32,4 +34,3 @@ class AfterSalesState(TypedDict, total=False):
     tool_call_count: int
     tool_events: list[dict[str, Any]]
     error_code: str | None
-

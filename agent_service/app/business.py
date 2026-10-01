@@ -3,6 +3,7 @@ import hashlib
 import json
 from typing import Any, Protocol
 from uuid import uuid4
+from urllib.parse import quote
 
 import httpx
 
@@ -30,6 +31,7 @@ MOCK_ORDERS: dict[str, dict[str, Any]] = {
     "ORD-CN-1001": {
         "order_id": "ORD-CN-1001",
         "customer_id": "CUS-CN-001",
+        "tenant_id": "tenant-one",
         "market": Market.CN.value,
         "product_model": "Xiaomi 15",
         "serial_number": "SN-CN-1001",
@@ -39,6 +41,7 @@ MOCK_ORDERS: dict[str, dict[str, Any]] = {
     "ORD-MY-2001": {
         "order_id": "ORD-MY-2001",
         "customer_id": "CUS-MY-001",
+        "tenant_id": "tenant-one",
         "market": Market.MY.value,
         "product_model": "Xiaomi 15",
         "serial_number": "SN-MY-2001",
@@ -103,6 +106,8 @@ class MockBusinessGateway:
             "serial_number": record["serial_number"],
             "market": record["market"],
             "product_model": record["product_model"],
+            "customer_id": record["customer_id"],
+            "tenant_id": record["tenant_id"],
             "status": record["repair_status"],
             "status_label": {
                 "RECEIVED": "已收件，等待检测",
@@ -137,24 +142,29 @@ class HttpBusinessGateway:
         try:
             async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
                 response = await client.request(method, f"{self.base_url}{path}", **kwargs)
+            try:
+                body = response.json()
+            except ValueError as exc:
+                raise BusinessGatewayError("下游返回非 JSON 数据", code="TOOL_INVALID_RESPONSE", retryable=False) from exc
+            if not isinstance(body, dict):
+                raise BusinessGatewayError("下游返回格式无效", code="TOOL_INVALID_RESPONSE", retryable=False)
             if response.status_code >= 400:
-                body = response.json() if response.content else {}
                 raise BusinessGatewayError(
                     body.get("message", "下游业务服务返回错误"),
                     code=body.get("code", "TOOL_UNAVAILABLE"),
                     retryable=response.status_code >= 500,
                 )
-            return response.json()
+            return body
         except httpx.TimeoutException as exc:
             raise BusinessGatewayError("下游业务服务超时", code="TOOL_TIMEOUT") from exc
         except httpx.HTTPError as exc:
             raise BusinessGatewayError("下游业务服务不可用", code="TOOL_UNAVAILABLE") from exc
 
     async def query_order(self, order_id: str) -> dict[str, Any]:
-        return await self._request("GET", f"/internal/orders/{order_id}")
+        return await self._request("GET", f"/internal/orders/{quote(order_id, safe='')}")
 
     async def query_device(self, serial_number: str) -> dict[str, Any]:
-        return await self._request("GET", f"/internal/devices/{serial_number}")
+        return await self._request("GET", f"/internal/devices/{quote(serial_number, safe='')}")
 
     async def query_repair_status(self, *, order_id: str | None, serial_number: str | None) -> dict[str, Any]:
         params = {key: value for key, value in {"order_id": order_id, "serial_number": serial_number}.items() if value}
@@ -167,38 +177,42 @@ class HttpBusinessGateway:
 class McpBusinessGateway:
     """通过 langchain-mcp-adapters 调用 FastMCP，只选择白名单内工具。"""
 
-    def __init__(self, mcp_url: str) -> None:
+    def __init__(self, mcp_url: str, timeout_seconds: float = 3, service_token: str = "") -> None:
         self.mcp_url = mcp_url
+        self.timeout_seconds = timeout_seconds
+        self._service_token = service_token
+        self._load_lock = asyncio.Lock()
         self._client: Any = None
         self._tools: dict[str, Any] = {}
 
     async def _load_tools(self) -> None:
         if self._client is not None:
             return
-        from langchain_mcp_adapters.client import MultiServerMCPClient
-
-        self._client = MultiServerMCPClient(
-            {
-                "globalcare": {
-                    "transport": "streamable_http",
-                    "url": self.mcp_url,
-                }
-            }
-        )
-        tools = await self._client.get_tools()
-        self._tools = {tool.name: tool for tool in tools}
+        async with self._load_lock:
+            if self._client is not None:
+                return
+            from langchain_mcp_adapters.client import MultiServerMCPClient
+            connection = {"transport": "streamable_http", "url": self.mcp_url}
+            if self._service_token:
+                connection["headers"] = {"Authorization": "Bearer " + self._service_token}
+            client = MultiServerMCPClient({"globalcare": connection})
+            tools = await client.get_tools()
+            self._tools = {tool.name: tool for tool in tools}
+            # 发现成功后才发布缓存；失败不能留下永久不可恢复的半初始化实例。
+            self._client = client
 
     async def _invoke(self, tool_name: ToolName, payload: dict[str, Any]) -> dict[str, Any]:
         if tool_name.value not in {item.value for item in ToolName}:
             raise BusinessGatewayError("工具不在权限白名单", code="TOOL_FORBIDDEN", retryable=False)
         if tool_name.value == ToolName.CREATE_CASE_DRAFT.value:
             raise BusinessGatewayError("模型不可调用写入工具", code="TOOL_FORBIDDEN", retryable=False)
-        await self._load_tools()
-        tool = self._tools.get(tool_name.value)
-        if tool is None:
-            raise BusinessGatewayError("MCP 工具不存在", code="TOOL_UNAVAILABLE")
         try:
-            result = await tool.ainvoke(payload)
+            async with asyncio.timeout(self.timeout_seconds):
+                await self._load_tools()
+                tool = self._tools.get(tool_name.value)
+                if tool is None:
+                    raise BusinessGatewayError("MCP 工具不存在", code="TOOL_UNAVAILABLE")
+                result = await tool.ainvoke(payload)
             if isinstance(result, dict):
                 if result.get("isError"):
                     raise BusinessGatewayError(
@@ -214,6 +228,11 @@ class McpBusinessGateway:
                     try:
                         decoded = json.loads(text)
                         if isinstance(decoded, dict):
+                            if decoded.get("isError"):
+                                raise BusinessGatewayError(
+                                    str(decoded.get("message") or "MCP 工具返回错误"),
+                                    code=str(decoded.get("code") or "TOOL_UNAVAILABLE"), retryable=False,
+                                )
                             return decoded
                     except json.JSONDecodeError:
                         if text.lower().startswith("error calling tool"):
@@ -227,7 +246,9 @@ class McpBusinessGateway:
                                     "DEVICE_NOT_FOUND" if "设备不存在" in message else "TOOL_UNAVAILABLE"
                                 )
                             raise BusinessGatewayError(message, code=code, retryable=False)
-            return {"result": result}
+            raise BusinessGatewayError("MCP 返回格式无效", code="TOOL_INVALID_RESPONSE", retryable=False)
+        except TimeoutError as exc:
+            raise BusinessGatewayError("MCP 工具发现或调用超时", code="TOOL_TIMEOUT") from exc
         except BusinessGatewayError:
             raise
         except Exception as exc:
@@ -249,10 +270,10 @@ class McpBusinessGateway:
         raise BusinessGatewayError("Case Draft 写入必须由应用节点调用", code="TOOL_FORBIDDEN", retryable=False)
 
 
-def build_business_gateway(mode: str, *, base_url: str, timeout_seconds: float, mcp_url: str) -> BusinessGateway:
+def build_business_gateway(mode: str, *, base_url: str, timeout_seconds: float, mcp_url: str, mcp_token: str = "") -> BusinessGateway:
     normalized = mode.lower()
     if normalized == "http":
         return HttpBusinessGateway(base_url, timeout_seconds)
     if normalized == "mcp":
-        return McpBusinessGateway(mcp_url)
+        return McpBusinessGateway(mcp_url, timeout_seconds, mcp_token)
     return MockBusinessGateway()

@@ -13,10 +13,10 @@ def to_psycopg_dsn(database_url: str) -> str:
 
 def main() -> int:
     settings = get_settings()
-    migration = Path(__file__).resolve().parents[1] / "agent_service" / "migrations" / "001_init.sql"
-    sql = migration.read_text(encoding="utf-8")
+    migration_dir = Path(__file__).resolve().parents[1] / "agent_service" / "migrations"
     with psycopg.connect(to_psycopg_dsn(settings.database_url), autocommit=True) as connection:
-        connection.execute(sql)
+        for migration in sorted(migration_dir.glob("*.sql")):
+            connection.execute(migration.read_text(encoding="utf-8"))
     print("POSTGRES_SCHEMA_READY")
     return 0
 
