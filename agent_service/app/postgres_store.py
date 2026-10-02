@@ -38,9 +38,20 @@ class PostgresStore:
         async with self.pool.connection() as connection:
             await connection.execute("SELECT state, case_draft_id FROM conversations LIMIT 0")
             await connection.execute("SELECT request_fingerprint, result FROM agent_message_requests LIMIT 0")
+            await connection.execute("SELECT result FROM agent_draft_writes LIMIT 0")
 
     async def close(self) -> None:
         await self.pool.close()
+
+    async def ready(self) -> bool:
+        try:
+            async with asyncio.timeout(3), self.pool.connection() as connection:
+                await connection.execute("SELECT state FROM conversations LIMIT 0")
+                await connection.execute("SELECT result FROM agent_message_requests LIMIT 0")
+                await connection.execute("SELECT result FROM agent_draft_writes LIMIT 0")
+            return True
+        except Exception:
+            return False
 
     @asynccontextmanager
     async def _connection(self):
@@ -156,11 +167,14 @@ class PostgresStore:
             )
             draft = state.get("case_draft")
             if draft and state.get("case_draft_id"):
-                await connection.execute(
+                saved = await connection.execute(
                     "INSERT INTO case_drafts (case_draft_id,conversation_id,draft_fingerprint,status,payload) "
-                    "VALUES (%s,%s,%s,%s,%s) ON CONFLICT (case_draft_id) DO UPDATE SET payload=EXCLUDED.payload",
+                    "VALUES (%s,%s,%s,%s,%s) ON CONFLICT (case_draft_id) DO UPDATE SET payload=EXCLUDED.payload "
+                    "WHERE case_drafts.conversation_id=EXCLUDED.conversation_id AND case_drafts.draft_fingerprint=EXCLUDED.draft_fingerprint",
                     (state["case_draft_id"], conversation_id, draft["draft_fingerprint"], "DRAFT_CREATED", Jsonb(draft)),
                 )
+                if saved.rowcount != 1:
+                    raise StoreRequestError("草稿 ID 与现有归属冲突，需要核对下游", code="DRAFT_CONFLICT")
             await connection.execute(
                 "UPDATE agent_message_requests SET result=%s,updated_at=now() WHERE conversation_id=%s AND client_message_id=%s",
                 (Jsonb(result), conversation_id, client_message_id),
@@ -179,6 +193,26 @@ class PostgresStore:
         if row is None:
             raise CaseDraftNotFoundError(str(draft_id))
         return row["payload"]
+
+    async def reserve_draft_write(self, payload: dict[str, Any]):
+        async with self._connection() as connection:
+            reserved = await (await connection.execute(
+                "INSERT INTO agent_draft_writes (draft_fingerprint,conversation_id,payload) VALUES (%s,%s,%s) "
+                "ON CONFLICT DO NOTHING RETURNING draft_fingerprint",
+                (payload["draft_fingerprint"], payload["conversation_id"], Jsonb(payload)),
+            )).fetchone()
+            if reserved:
+                return None
+            row = await (await connection.execute("SELECT result FROM agent_draft_writes WHERE draft_fingerprint=%s",
+                                                   (payload["draft_fingerprint"],))).fetchone()
+            if not row or row["result"] is None:
+                raise StoreRequestError("上次草稿写入结果未确定，需要核对下游", code="DRAFT_WRITE_INDETERMINATE")
+            return {**row["result"], "idempotent_replay": True}
+
+    async def confirm_draft_write(self, fingerprint: str, result: dict[str, Any]):
+        async with self._connection() as connection:
+            await connection.execute("UPDATE agent_draft_writes SET result=%s,updated_at=now() WHERE draft_fingerprint=%s",
+                                     (Jsonb(result), fingerprint))
 
     async def record_audit(self, conversation_id: UUID, token: str, *, trace_id: str,
                            event_type: str, event_payload: dict[str, Any]):
@@ -199,3 +233,12 @@ class PostgresStore:
 
     async def get_state(self, conversation_id: UUID, token: str):
         return dict((await self.get_conversation(conversation_id, token)).state)
+
+    async def record_unknown(self, conversation_id: UUID, token: str, trace_id: str, message_id: str):
+        await self.get_conversation(conversation_id, token)
+        async with self._connection() as connection, connection.transaction():
+            await connection.execute("UPDATE conversations SET status='FAILED',updated_at=now() WHERE conversation_id=%s", (conversation_id,))
+            await connection.execute(
+                "INSERT INTO agent_audit_events (audit_id,conversation_id,trace_id,event_type,event_payload) VALUES (%s,%s,%s,%s,%s)",
+                (uuid4(), conversation_id, trace_id, "AGENT_RUN_INDETERMINATE", Jsonb({"client_message_id": message_id, "code": "AGENT_RUN_TIMEOUT"})),
+            )

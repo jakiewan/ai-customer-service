@@ -1,6 +1,8 @@
 import asyncio
 import json
 import logging
+import re
+import httpx
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Annotated
@@ -38,7 +40,7 @@ logger = logging.getLogger(__name__)
 
 def _trace_id(request: Request) -> str:
     supplied = request.headers.get("X-Request-Id", "").strip()
-    return supplied[:64] or str(uuid4())
+    return supplied if re.fullmatch(r"[A-Za-z0-9_-]{1,64}", supplied) else str(uuid4())
 
 
 def _error_response(code: ErrorCode | str, message: str, trace_id: str, *, retryable: bool = False) -> JSONResponse:
@@ -75,14 +77,17 @@ async def _postgres_ready(database_url: str) -> bool:
         return False
 
 
-async def _mcp_ready(mcp_url: str) -> bool:
+async def _mcp_ready(mcp_url: str, service_token: str = "") -> bool:
     try:
         from langchain_mcp_adapters.client import MultiServerMCPClient
 
-        client = MultiServerMCPClient(
-            {"globalcare": {"transport": "streamable_http", "url": mcp_url}}
-        )
-        return bool(await client.get_tools())
+        connection = {"transport": "streamable_http", "url": mcp_url}
+        if service_token:
+            connection["headers"] = {"Authorization": "Bearer " + service_token}
+        client = MultiServerMCPClient({"globalcare": connection})
+        async with asyncio.timeout(3):
+            names = {tool.name for tool in await client.get_tools()}
+        return {"query_order", "query_device", "query_repair_status"}.issubset(names) and "create_case_draft" not in names
     except Exception:  # noqa: BLE001 - MCP 会话/传输任意失败都应被报告为 down。
         return False
 
@@ -112,6 +117,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         embedding_mode=app_settings.embedding_mode,
         embedding_model=app_settings.embedding_model,
         embedding_dimensions=app_settings.embedding_dimensions,
+        allow_fallback=app_settings.policy_allow_fallback,
+        require_approved=app_settings.environment in {"staging", "production"},
     )
     model = AgentModel(
         mode=app_settings.llm_mode,
@@ -127,6 +134,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         timeout_seconds=app_settings.business_timeout_seconds,
         mcp_url=app_settings.mcp_url,
         mcp_token=app_settings.mcp_token,
+        business_token=app_settings.business_token,
     )
     draft_gateway = build_business_gateway(
         app_settings.business_mode,
@@ -134,6 +142,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         timeout_seconds=app_settings.business_timeout_seconds,
         mcp_url=app_settings.mcp_url,
         mcp_token=app_settings.mcp_token,
+        business_token=app_settings.business_token,
     )
     store = (PostgresStore(app_settings.database_url, app_settings.message_lock_timeout_seconds)
              if app_settings.persistence_mode == "postgres" else InMemoryStore(app_settings.message_lock_timeout_seconds))
@@ -144,6 +153,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         "draft_gateway": draft_gateway,
         "max_steps": app_settings.max_graph_steps,
         "max_tool_calls": app_settings.max_tool_calls,
+        "draft_store": store,
     }
     graph = build_graph(**graph_kwargs)
     conversation_service = ConversationService(
@@ -152,6 +162,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             graph, max_steps=app_settings.max_graph_steps, token_budget=app_settings.token_budget
         ),
         run_timeout_seconds=app_settings.agent_run_timeout_seconds,
+        max_active_runs=app_settings.max_active_runs,
     )
     app.state.settings = app_settings
     app.state.policy_store = policy_store
@@ -218,17 +229,39 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         trace_id = _trace_id(request)
         # memory 模式是明确的离线 fallback，不伪装成 PostgreSQL 已连接。
         postgres_state = "degraded"
-        if app_settings.checkpointer_mode.lower() == "postgres":
+        if app_settings.checkpointer_mode == "postgres" or app_settings.persistence_mode == "postgres":
             postgres_state = "up" if await _postgres_ready(app_settings.database_url) else "down"
+        store_state = "up" if isinstance(store, InMemoryStore) else "up" if await store.ready() else "down"
         # 根据实际 PolicyStore 实例判断 pgvector 是否创建成功。
         pgvector_state = "up" if policy_store.pg_vector_store is not None else "degraded"
+        if app_settings.policy_backend == "pgvector":
+            try:
+                async with asyncio.timeout(4):
+                    evidence = await asyncio.to_thread(policy_store.retrieve, "手机保修政策", "MY", 1)
+                pgvector_state = "up" if evidence and not policy_store.degraded else "down"
+            except Exception:
+                pgvector_state = "down"
         mcp_state = "degraded"
         if app_settings.mcp_mode.lower() in {"http", "streamable_http"}:
-            mcp_state = "up" if await _mcp_ready(app_settings.mcp_url) else "down"
+            mcp_state = "up" if await _mcp_ready(app_settings.mcp_url, app_settings.mcp_token) else "down"
         model_state = "configured" if app_settings.llm_mode.lower() == "mock" or app_settings.minimax_api_key else "missing"
-        return ApiResponse(
+        business_state = "mock"
+        if app_settings.business_mode == "http":
+            try:
+                async with httpx.AsyncClient(timeout=3) as client:
+                    response = await client.get(app_settings.business_base_url.rstrip("/") + app_settings.business_health_path,
+                                                headers={"Authorization": "Bearer " + app_settings.business_token} if app_settings.business_token else {})
+                business_state = "up" if response.is_success else "down"
+            except Exception:
+                business_state = "down"
+        ready = (store_state == "up" and model_state != "missing" and business_state != "down" and
+                 postgres_state != "down" and (app_settings.policy_backend != "pgvector" or pgvector_state == "up") and
+                 (app_settings.mcp_mode == "mock" or mcp_state == "up"))
+        payload = ApiResponse(
             data={
-                "status": "ready",
+                "status": "ready" if ready else "not_ready",
+                "store": store_state,
+                "business": business_state,
                 "postgres": postgres_state,
                 "pgvector": pgvector_state,
                 "mcp": mcp_state,
@@ -236,6 +269,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             },
             trace_id=trace_id,
         )
+        return JSONResponse(status_code=200 if ready else 503, content=payload.model_dump(mode="json"))
 
     @app.post("/api/v1/conversations", response_model=ApiResponse[ConversationResponse], tags=["conversation"])
     async def create_conversation(
@@ -267,7 +301,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return StreamingResponse(
             event_stream(),
             media_type="text/event-stream",
-            headers={"Cache-Control": "no-cache", "Connection": "keep-alive", "X-Trace-Id": trace_id},
+            headers={"Cache-Control": "no-cache", "Connection": "keep-alive", "X-Trace-Id": trace_id, "X-Accel-Buffering": "no"},
         )
 
     @app.get("/api/v1/conversations/{conversation_id}", response_model=ApiResponse[ConversationView], tags=["conversation"])

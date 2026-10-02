@@ -176,7 +176,8 @@ GRAPH_CASES = [
     ("我要申请售后维修", "missing", "订单号或设备序列号"),
     ("退款要怎么处理", "human", "无法基于可靠的政策"),
     ("我要申请售后维修，订单号 ORD-NO-9999", "missing", "订单不存在"),
-    ("我要申请售后维修，订单号 ORD-CN-1001", "order_market_authoritative", "Case Draft"),
+    # 不从订单号前缀猜购买国；MY 请求与 CN 业务事实冲突时必须拒绝。
+    ("我要申请售后维修，订单号 ORD-CN-1001", "market_conflict", "市场不一致"),
     ("查询维修进度", "missing", "订单号或设备序列号"),
     ("你好", "general", "售后问题"),
 ]

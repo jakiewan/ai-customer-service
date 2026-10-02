@@ -71,6 +71,7 @@ class InMemoryStore:
         self._conversations: dict[UUID, ConversationRecord] = {}
         self._drafts: dict[UUID, dict[str, Any]] = {}
         self._audits: dict[UUID, list[AuditEventRecord]] = {}
+        self._draft_writes: dict[str, dict[str, Any] | None] = {}
         self._lock = asyncio.Lock()
         self.lock_timeout_seconds = lock_timeout_seconds
         self._message_locks: WeakValueDictionary = WeakValueDictionary()
@@ -143,6 +144,11 @@ class InMemoryStore:
     ) -> None:
         async with self._lock:
             conversation = await self.get_conversation(conversation_id, token)
+            draft = state.get("case_draft")
+            case_id = state.get("case_draft_id")
+            existing = self._drafts.get(UUID(case_id)) if case_id else None
+            if existing and draft and (str(existing["conversation_id"]) != str(conversation_id) or existing["draft_fingerprint"] != draft["draft_fingerprint"]):
+                raise StoreRequestError("草稿 ID 与现有归属冲突，需要核对下游", code="DRAFT_CONFLICT")
             conversation.state = state
             conversation.status = ConversationStatus(state.get("conversation_status", ConversationStatus.AI_ACTIVE.value))
             conversation.market = state.get("market") or conversation.market
@@ -170,6 +176,21 @@ class InMemoryStore:
             raise CaseDraftNotFoundError(str(draft_id))
         return draft
 
+    async def reserve_draft_write(self, payload: dict[str, Any]):
+        async with self._lock:
+            fingerprint = payload["draft_fingerprint"]
+            if fingerprint in self._draft_writes:
+                result = self._draft_writes[fingerprint]
+                if result is None:
+                    raise StoreRequestError("上次草稿写入结果未确定，需要核对下游", code="DRAFT_WRITE_INDETERMINATE")
+                return {**result, "idempotent_replay": True}
+            self._draft_writes[fingerprint] = None
+        return None
+
+    async def confirm_draft_write(self, fingerprint: str, result: dict[str, Any]):
+        async with self._lock:
+            self._draft_writes[fingerprint] = result
+
     async def record_audit(
         self,
         conversation_id: UUID,
@@ -188,6 +209,14 @@ class InMemoryStore:
     async def get_audits(self, conversation_id: UUID, token: str) -> list[AuditEventRecord]:
         await self.get_conversation(conversation_id, token)
         return list(self._audits.get(conversation_id, []))
+
+    async def record_unknown(self, conversation_id: UUID, token: str, trace_id: str, message_id: str):
+        async with self._lock:
+            conversation = await self.get_conversation(conversation_id, token)
+            conversation.status = ConversationStatus.FAILED
+            conversation.state["conversation_status"] = "FAILED"
+            self._audits[conversation_id].append(AuditEventRecord(uuid4(), trace_id, "AGENT_RUN_INDETERMINATE",
+                                                                 {"client_message_id": message_id, "code": "AGENT_RUN_TIMEOUT"}))
 
     async def get_state(self, conversation_id: UUID, token: str) -> dict[str, Any]:
         conversation = await self.get_conversation(conversation_id, token)

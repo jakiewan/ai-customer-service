@@ -15,7 +15,7 @@ mcp = FastMCP("test-business-boundary", auth=BusinessTokenVerifier(service_token
 
 @mcp.tool
 async def query_order(order_id: str) -> dict:
-    if order_id == "SLOW":
+    if order_id in {"SLOW", "ORD-MY-SLOW"}:
         await asyncio.sleep(2)
     if order_id == "INVALID":
         return {"isError": True, "code": "ORDER_NOT_FOUND", "message": "订单不存在"}

@@ -172,3 +172,40 @@ async def test_message_over_budget_stops_before_graph_execution() -> None:
     events = await collect_events(service, conversation.conversation_id, "message-010", "手机无法开机怎么办")
     errors = [event for event in events if event["event"] == "error"]
     assert errors[0]["data"]["code"] == "AGENT_BUDGET_EXCEEDED"
+
+
+@pytest.mark.asyncio
+async def test_another_phone_collects_identifier_instead_of_reusing_old_draft():
+    app = create_app(Settings(_env_file=None, demo_token="test-token"))
+    service = app.state.conversation_service
+    conversation = await service.create_conversation("test-token", CreateConversationRequest(market="MY"))
+    await collect_events(service, conversation.conversation_id, "old-phone", "申请维修，订单 ORD-MY-2001，手机无法开机")
+    events = await collect_events(service, conversation.conversation_id, "new-phone", "另一台手机我要申请维修")
+    text = "".join(event["data"].get("delta", "") for event in events)
+    assert "订单号或设备序列号" in text
+    assert "复用" not in text
+    assert (await service.conversation_view(conversation.conversation_id, "test-token")).case_draft_id is None
+
+
+@pytest.mark.asyncio
+async def test_market_only_response_resumes_case_but_cancel_does_not():
+    app = create_app(Settings(_env_file=None, demo_token="test-token"))
+    service = app.state.conversation_service
+    conversation = await service.create_conversation("test-token", CreateConversationRequest())
+    await collect_events(service, conversation.conversation_id, "missing-market", "申请维修，订单 ORD-CN-1001，手机无法开机")
+    continued = await collect_events(service, conversation.conversation_id, "country-only", "中国 CN")
+    assert any(event["event"] == "case_draft_created" for event in continued)
+    other = await service.create_conversation("test-token", CreateConversationRequest(market="MY"))
+    await collect_events(service, other.conversation_id, "ask-order", "我要申请维修")
+    cancelled = await collect_events(service, other.conversation_id, "cancel-with-order", "不要申请维修，订单 ORD-MY-2001")
+    assert not any(event["event"] == "case_draft_created" for event in cancelled)
+
+
+@pytest.mark.asyncio
+async def test_how_to_apply_is_information_not_write_consent():
+    app = create_app(Settings(_env_file=None, demo_token="test-token"))
+    service = app.state.conversation_service
+    conversation = await service.create_conversation("test-token", CreateConversationRequest(market="MY"))
+    await collect_events(service, conversation.conversation_id, "existing-context", "订单 ORD-MY-2001 手机无法开机怎么办")
+    events = await collect_events(service, conversation.conversation_id, "procedure-question", "申请维修需要什么材料")
+    assert not any(event["event"] == "case_draft_created" for event in events)

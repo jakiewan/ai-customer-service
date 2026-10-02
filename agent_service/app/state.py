@@ -1,10 +1,14 @@
-import operator
 from typing import Annotated, Any, TypedDict
+
+
+def bounded_messages(previous: list, added: list) -> list:
+    """只留最近十轮；完整历史仍存消息表，checkpoint 不无限膨胀。"""
+    return (previous + added)[-20:]
 
 
 class AfterSalesState(TypedDict, total=False):
     conversation_id: str
-    messages: Annotated[list[dict[str, Any]], operator.add]
+    messages: Annotated[list[dict[str, Any]], bounded_messages]
     market: str | None
     language: str | None
     intent: str | None

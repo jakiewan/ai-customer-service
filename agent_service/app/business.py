@@ -17,6 +17,11 @@ class BusinessGatewayError(RuntimeError):
         self.retryable = retryable
 
 
+def public_business_error(code: str) -> str:
+    # 错误正文可能包含 SQL、凭证或内部地址，不能直接回显给客户。
+    return {"ORDER_NOT_FOUND": "订单不存在", "DEVICE_NOT_FOUND": "设备不存在"}.get(code, "下游业务暂时不可用")
+
+
 class BusinessGateway(Protocol):
     async def query_order(self, order_id: str) -> dict[str, Any]: ...
 
@@ -64,7 +69,7 @@ def mask_identifier(value: str | None) -> str | None:
 
 
 def draft_fingerprint(payload: dict[str, Any]) -> str:
-    stable_fields = "|".join(
+    stable_fields = json.dumps([
         str(payload.get(key, ""))
         for key in (
             "conversation_id",
@@ -75,7 +80,7 @@ def draft_fingerprint(payload: dict[str, Any]) -> str:
             "serial_number",
             "suggested_resolution",
         )
-    )
+    ], ensure_ascii=False, separators=(",", ":"))
     return hashlib.sha256(stable_fields.encode("utf-8")).hexdigest()
 
 
@@ -134,14 +139,15 @@ class MockBusinessGateway:
 
 
 class HttpBusinessGateway:
-    def __init__(self, base_url: str, timeout_seconds: float = 3.0) -> None:
+    def __init__(self, base_url: str, timeout_seconds: float = 3.0, service_token: str = "") -> None:
         self.base_url = base_url.rstrip("/")
         self.timeout_seconds = timeout_seconds
+        self._headers = {"Authorization": "Bearer " + service_token} if service_token else {}
 
     async def _request(self, method: str, path: str, **kwargs: Any) -> dict[str, Any]:
         try:
             async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
-                response = await client.request(method, f"{self.base_url}{path}", **kwargs)
+                response = await client.request(method, f"{self.base_url}{path}", headers=self._headers, **kwargs)
             try:
                 body = response.json()
             except ValueError as exc:
@@ -150,7 +156,7 @@ class HttpBusinessGateway:
                 raise BusinessGatewayError("下游返回格式无效", code="TOOL_INVALID_RESPONSE", retryable=False)
             if response.status_code >= 400:
                 raise BusinessGatewayError(
-                    body.get("message", "下游业务服务返回错误"),
+                    public_business_error(str(body.get("code", "TOOL_UNAVAILABLE"))),
                     code=body.get("code", "TOOL_UNAVAILABLE"),
                     retryable=response.status_code >= 500,
                 )
@@ -216,7 +222,7 @@ class McpBusinessGateway:
             if isinstance(result, dict):
                 if result.get("isError"):
                     raise BusinessGatewayError(
-                        str(result.get("message") or "MCP 工具返回错误"),
+                        public_business_error(str(result.get("code") or "TOOL_UNAVAILABLE")),
                         code=str(result.get("code") or "TOOL_UNAVAILABLE"),
                         retryable=False,
                     )
@@ -230,7 +236,7 @@ class McpBusinessGateway:
                         if isinstance(decoded, dict):
                             if decoded.get("isError"):
                                 raise BusinessGatewayError(
-                                    str(decoded.get("message") or "MCP 工具返回错误"),
+                                    public_business_error(str(decoded.get("code") or "TOOL_UNAVAILABLE")),
                                     code=str(decoded.get("code") or "TOOL_UNAVAILABLE"), retryable=False,
                                 )
                             return decoded
@@ -245,7 +251,7 @@ class McpBusinessGateway:
                                 code = "ORDER_NOT_FOUND" if "订单不存在" in message else (
                                     "DEVICE_NOT_FOUND" if "设备不存在" in message else "TOOL_UNAVAILABLE"
                                 )
-                            raise BusinessGatewayError(message, code=code, retryable=False)
+                            raise BusinessGatewayError(public_business_error(code), code=code, retryable=False)
             raise BusinessGatewayError("MCP 返回格式无效", code="TOOL_INVALID_RESPONSE", retryable=False)
         except TimeoutError as exc:
             raise BusinessGatewayError("MCP 工具发现或调用超时", code="TOOL_TIMEOUT") from exc
@@ -270,10 +276,10 @@ class McpBusinessGateway:
         raise BusinessGatewayError("Case Draft 写入必须由应用节点调用", code="TOOL_FORBIDDEN", retryable=False)
 
 
-def build_business_gateway(mode: str, *, base_url: str, timeout_seconds: float, mcp_url: str, mcp_token: str = "") -> BusinessGateway:
+def build_business_gateway(mode: str, *, base_url: str, timeout_seconds: float, mcp_url: str, mcp_token: str = "", business_token: str = "") -> BusinessGateway:
     normalized = mode.lower()
     if normalized == "http":
-        return HttpBusinessGateway(base_url, timeout_seconds)
+        return HttpBusinessGateway(base_url, timeout_seconds, business_token)
     if normalized == "mcp":
         return McpBusinessGateway(mcp_url, timeout_seconds, mcp_token)
     return MockBusinessGateway()

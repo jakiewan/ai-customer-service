@@ -40,10 +40,12 @@ NODE_LABELS = {
 
 
 class ConversationService:
-    def __init__(self, *, store: InMemoryStore | PostgresStore, graph_service: GraphService, run_timeout_seconds: float = 60) -> None:
+    def __init__(self, *, store: InMemoryStore | PostgresStore, graph_service: GraphService, run_timeout_seconds: float = 60, max_active_runs: int = 8) -> None:
         self.store = store
         self.graph_service = graph_service
         self.run_timeout_seconds = run_timeout_seconds
+        self.max_active_runs = max_active_runs
+        self._active_runs = 0
 
     async def create_conversation(self, token: str, request: CreateConversationRequest, *, actor_context: dict[str, str] | None = None) -> ConversationResponse:
         record = await self.store.create_conversation(
@@ -65,12 +67,21 @@ class ConversationService:
     async def stream_message(
         self, conversation_id: UUID, token: str, request: MessageRequest, trace_id: str
     ) -> AsyncIterator[dict[str, Any]]:
+        if self._active_runs >= self.max_active_runs:
+            yield {"event": "error", "data": {"code": "AGENT_BUSY", "message": "Agent 当前繁忙，请稍后重试", "retryable": True, "trace_id": trace_id}}
+            yield {"event": "done", "data": {"status": "FAILED", "trace_id": trace_id}}
+            return
+        self._active_runs += 1
         try:
             async with self.store.message_lock(conversation_id, token):
-                async with asyncio.timeout(self.run_timeout_seconds):
-                    async with aclosing(self._stream_message(conversation_id, token, request, trace_id)) as events:
-                        async for event in events:
-                            yield event
+                try:
+                    async with asyncio.timeout(self.run_timeout_seconds):
+                        async with aclosing(self._stream_message(conversation_id, token, request, trace_id)) as events:
+                            async for event in events:
+                                yield event
+                except TimeoutError:
+                    await self.store.record_unknown(conversation_id, token, trace_id, request.client_message_id)
+                    raise
         except StoreRequestError as exc:
             yield {"event": "error", "data": {"code": exc.code, "message": str(exc), "retryable": exc.retryable, "trace_id": trace_id}}
             yield {"event": "done", "data": {"status": "FAILED", "trace_id": trace_id}}
@@ -81,6 +92,8 @@ class ConversationService:
             logger.error("消息处理异常: trace_id=%s type=%s", trace_id, type(exc).__name__)
             yield {"event": "error", "data": {"code": "INTERNAL_ERROR", "message": "服务暂时不可用，结果需核对后再继续", "retryable": False, "trace_id": trace_id}}
             yield {"event": "done", "data": {"status": "FAILED", "trace_id": trace_id}}
+        finally:
+            self._active_runs -= 1
 
     async def _stream_message(
         self, conversation_id: UUID, token: str, request: MessageRequest, trace_id: str
@@ -166,7 +179,10 @@ class ConversationService:
                         },
                     )
                     yield {"event": "tool_call", "data": tool_event}
-                for evidence in patch.get("policy_evidence", []):
+                evidence_to_send = patch.get("policy_evidence", [])
+                if current_state.get("intent") == "CASE_REQUEST":
+                    evidence_to_send = current_state.get("policy_evidence", []) if node_name == "query_business" and not current_state.get("human_required") else []
+                for evidence in evidence_to_send:
                     policy_id = str(evidence.get("policy_id"))
                     if policy_id not in evidence_sent:
                         evidence_sent.add(policy_id)
@@ -219,7 +235,7 @@ class ConversationService:
         reply = str(final_state.get("reply") or "")
         result = {
             "reply": reply,
-            "citations": final_state.get("citations", []),
+            "citations": [] if final_state.get("human_required") else final_state.get("citations", []),
             "case_draft_id": final_state.get("case_draft_id"),
             "market": final_state.get("case_draft", {}).get("market") if final_state.get("case_draft") else final_state.get("market"),
             "status": final_state.get("conversation_status", ConversationStatus.AI_ACTIVE.value),
@@ -232,7 +248,7 @@ class ConversationService:
             client_message_id=request.client_message_id,
             state=final_state,
             reply=reply,
-            citations=final_state.get("citations", []),
+            citations=result["citations"],
             result=result,
         )
         if draft_event:

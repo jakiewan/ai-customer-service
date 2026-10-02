@@ -51,6 +51,7 @@ class AgentModel:
                 temperature=temperature,
                 timeout=20,
                 max_retries=0,
+                max_tokens=512,
             )
             self._raw_intent_chain = prompt | model
             self._intent_chain = prompt | model.with_structured_output(IntentDecision)
@@ -63,7 +64,7 @@ class AgentModel:
                     return result
                 return IntentDecision.model_validate(result)
             except Exception as exc:  # noqa: BLE001 - Provider 失败必须回退到确定性安全路由。
-                logger.error("MiniMax 结构化意图调用失败，尝试受控 JSON 解析: %s", exc)
+                logger.error("结构化意图调用失败: type=%s", type(exc).__name__)
                 parsed = await self._parse_raw_intent(message)
                 if parsed is not None:
                     return parsed
@@ -93,7 +94,7 @@ class AgentModel:
             payload = _normalize_intent_payload(json.loads(candidate))
             return IntentDecision.model_validate(payload)
         except Exception as exc:  # noqa: BLE001 - 无法通过 schema 校验时必须走确定性 fallback。
-            logger.error("MiniMax 原始结构化内容不可用，回退离线路由: %s", exc)
+            logger.error("模型结构化内容不可用: type=%s", type(exc).__name__)
             return None
 
 
