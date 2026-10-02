@@ -237,6 +237,8 @@ class ConversationService:
             "reply": reply,
             "citations": [] if final_state.get("human_required") else final_state.get("citations", []),
             "case_draft_id": final_state.get("case_draft_id"),
+            # 会话历史草稿 ID 不代表本轮发过草稿事件；保存实际事件用于幂等重放。
+            "case_draft_event": draft_event["data"] if draft_event else None,
             "market": final_state.get("case_draft", {}).get("market") if final_state.get("case_draft") else final_state.get("market"),
             "status": final_state.get("conversation_status", ConversationStatus.AI_ACTIVE.value),
             "human_required": bool(final_state.get("human_required")),
@@ -278,17 +280,20 @@ class ConversationService:
             yield {"event": "token", "data": {"delta": chunk}}
         for evidence in result.get("citations", []):
             yield {"event": "policy_evidence", "data": evidence}
-        if result.get("case_draft_id"):
+        draft_data = result.get("case_draft_event")
+        if "case_draft_event" not in result and result.get("case_draft_id") and result.get("status") == ConversationStatus.CASE_DRAFT_CREATED.value:
+            # 兼容旧缓存；常规 FAQ/进度的 AI_ACTIVE 状态不能推导出草稿事件。
+            draft_data = {
+                "case_draft_id": result["case_draft_id"],
+                "status": ConversationStatus.CASE_DRAFT_CREATED.value,
+                "review_required": True,
+                "summary": "已复用现有 Case Draft",
+                "market": result.get("market"),
+            }
+        if draft_data:
             yield {
                 "event": "case_draft_created",
-                "data": {
-                    "case_draft_id": result["case_draft_id"],
-                    "status": ConversationStatus.CASE_DRAFT_CREATED.value,
-                    "review_required": True,
-                    "summary": "已复用现有 Case Draft",
-                    "market": result.get("market"),
-                    "idempotent_replay": True,
-                },
+                "data": {**draft_data, "idempotent_replay": True},
             }
         if result.get("human_required"):
             yield {"event": "human_required", "data": {"reason": "上次请求未能可靠处理"}}

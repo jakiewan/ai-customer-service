@@ -67,6 +67,30 @@ async def test_concurrent_same_request_has_one_message_pair_and_one_completion(d
         assert sum(item.event_type == "AGENT_RUN_COMPLETED" for item in audit) == 1
 
 
+@pytest.mark.parametrize("message", ["保修政策是什么", "我还是要申请维修"])
+def test_restart_replay_does_not_report_historical_draft_as_new_event(database_url, message):
+    settings = Settings(_env_file=None, persistence_mode="postgres", database_url=database_url, demo_token="restart-test")
+    headers = {"X-Demo-Token": "restart-test"}
+    body = {"client_message_id": "not-created-this-round", "message": message}
+    with TestClient(create_app(settings)) as first:
+        created = first.post("/api/v1/conversations", headers=headers, json={"market": "MY"})
+        uri = "/api/v1/conversations/" + created.json()["data"]["conversation_id"]
+        draft = first.post(uri + "/messages/stream", headers=headers, json={
+            "client_message_id": "original-draft", "message": "申请维修，订单 ORD-MY-2001，手机无法开机",
+        })
+        assert "event: case_draft_created" in draft.text
+        response = first.post(uri + "/messages/stream", headers=headers, json=body)
+        assert "event: case_draft_created" not in response.text
+        before = first.get(uri, headers=headers).json()["data"]
+        assert before["case_draft_id"] is not None
+    with TestClient(create_app(settings)) as restarted:
+        replay = restarted.post(uri + "/messages/stream", headers=headers, json=body)
+        assert replay.status_code == 200
+        assert "event: done" in replay.text
+        assert "event: case_draft_created" not in replay.text
+        assert restarted.get(uri, headers=headers).json()["data"]["messages"] == before["messages"]
+
+
 @pytest.mark.parametrize("backend", ["memory", "postgres"])
 def test_failed_run_is_queryable_and_same_id_replays_failure(database_url, backend):
     settings = Settings(_env_file=None, persistence_mode=backend, database_url=database_url, token_budget=1)
