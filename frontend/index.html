@@ -582,7 +582,7 @@
             </div>
 
             <div class="insight-card">
-              <div class="card-title">政策引用 <span>pgvector</span></div>
+              <div class="card-title">政策引用 <span>{{ policy ? policy.backend : '待检索' }}</span></div>
               <div v-if="policy" class="policy-card">
                 <strong>{{ policy.title }}</strong>
                 <p>{{ policy.excerpt }}</p>
@@ -609,7 +609,7 @@
               <div v-else class="notice">只有用户明确申请售后且信息校验通过后，才会生成 Case Draft。</div>
             </div>
 
-            <div class="notice"><b>工程边界：</b>模型只做理解、检索和草稿生成；MCP 查询业务事实，正式写操作由下游 Java 系统处理。</div>
+            <div class="notice"><b>工程边界：</b>模型识别意图；LangGraph 检索证据并受控保存草稿；正式案例与工单属于下游系统。当前为脱敏模拟数据。</div>
           </aside>
         </div>
       </main>
@@ -626,7 +626,15 @@
         const isTyping = ref(false);
         const currentStatus = ref("AI_ACTIVE");
         const messageList = ref(null);
-        const apiBaseUrl = "http://127.0.0.1:8000";
+        // 本地联调允许选择回环服务端口；不把 Demo 凭证发送到任意外部地址。
+        let apiBaseUrl = "http://127.0.0.1:8000";
+        const localApi = new URLSearchParams(location.search).get("api");
+        if (localApi) {
+          try {
+            const parsed = new URL(localApi);
+            if (["127.0.0.1", "localhost"].includes(parsed.hostname) && parsed.protocol === "http:") apiBaseUrl = parsed.origin;
+          } catch (_error) { /* 无效地址继续使用默认本地服务。 */ }
+        }
         const demoToken = "globalcare-demo-token";
         const conversationId = ref(null);
         const quickPrompts = [
@@ -747,6 +755,7 @@
             const reader = response.body.getReader();
             const decoder = new TextDecoder();
             let buffer = "";
+            let receivedDone = false;
             while (true) {
               const chunk = await reader.read();
               if (chunk.done) break;
@@ -761,9 +770,15 @@
                 const data = JSON.parse(dataLine.replace("data: ", ""));
                 if (eventName === "status") updateTraceFromApi(data);
                 if (eventName === "policy_evidence") {
-                  policy.value = { title: data.title, version: data.version, excerpt: data.excerpt };
+                  policy.value = { title: data.title, version: data.version, excerpt: data.excerpt, backend: data.retrieval_backend || '政策证据' };
                 }
                 if (eventName === "token") appendToken(data.delta || "");
+                if (eventName === "error") {
+                  const typingIndex = messages.value.findIndex((item) => item.typing);
+                  if (typingIndex >= 0) messages.value.splice(typingIndex, 1);
+                  pushAssistant((data.message || "Agent 暂时无法处理") + (data.trace_id ? "\n请求追踪号：" + data.trace_id : ""));
+                  currentStatus.value = "FAILED";
+                }
                 if (eventName === "case_draft_created") {
                   draft.value = {
                     id: data.case_draft_id,
@@ -774,15 +789,17 @@
                   };
                 }
                 if (eventName === "done") {
+                  receivedDone = true;
                   currentStatus.value = data.status || currentStatus.value;
                   finishTrace();
                 }
               });
             }
+            if (!receivedDone) throw new Error("响应在完成前中断，请核对处理结果，不要直接重复提交维修申请。");
           } catch (error) {
             const typingIndex = messages.value.findIndex((item) => item.typing);
             if (typingIndex >= 0) messages.value.splice(typingIndex, 1);
-            pushAssistant("无法连接 Agent 服务。请确认 FastAPI 服务已启动后重试。");
+            pushAssistant(error.message || "无法连接 Agent 服务。请确认 FastAPI 服务已启动后重试。");
             currentStatus.value = "FAILED";
           } finally {
             isTyping.value = false;
