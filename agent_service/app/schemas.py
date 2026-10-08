@@ -58,6 +58,31 @@ class PolicyEvidence(BaseModel):
     language: str
     excerpt: str
     score: float = Field(ge=0, le=1)
+    score_kind: Literal["token_overlap_heuristic"] = "token_overlap_heuristic"
+    retrieval_backend: Literal["memory", "pgvector"] = "memory"
+    degraded: bool = False
+
+
+class BusinessFact(BaseModel):
+    model_config = ConfigDict(extra="ignore", str_strip_whitespace=True)
+    order_id: str = Field(min_length=1, max_length=128, strict=True)
+    serial_number: str = Field(min_length=1, max_length=128, strict=True)
+    market: Market
+    product_model: str = Field(min_length=1, max_length=128, strict=True)
+    customer_id: str | None = Field(default=None, min_length=1, max_length=128, strict=True)
+    tenant_id: str | None = Field(default=None, min_length=1, max_length=128, strict=True)
+    status: str | None = Field(default=None, min_length=1, max_length=128, strict=True)
+    status_label: str | None = Field(default=None, max_length=256, strict=True)
+
+
+class DraftWriteResult(BaseModel):
+    case_draft_id: UUID
+    created_at: datetime | None = None
+    status: Literal["DRAFT_CREATED", "CASE_DRAFT_CREATED"] | None = None
+    idempotent_replay: bool = Field(default=False, strict=True)
+    draft_fingerprint: str | None = None
+    market: Market | None = None
+    conversation_id: UUID | None = None
 
 
 class CaseDraftView(BaseModel):

@@ -1,3 +1,5 @@
+import pytest
+
 from agent_service.app.constants import Intent, Market
 from agent_service.app.intent import classify_intent, extract_context
 from agent_service.app.policy_store import PolicyStore
@@ -22,3 +24,15 @@ def test_policy_retrieval_is_market_isolated() -> None:
     assert evidence
     assert all(item.market == Market.MY for item in evidence)
     assert all(item.policy_id.startswith("MY-") for item in evidence)
+
+
+@pytest.mark.parametrize("text,market", [
+    ("MY", Market.MY), ("my", Market.MY), ("country: my", Market.MY),
+    ("手机 MY 保修", Market.MY), ("Malaysia phone warranty", Market.MY),
+    ("CN", Market.CN), ("cn", Market.CN), ("I bought my phone in China", Market.CN),
+    ("my phone warranty", None), ("My phone cannot power on", None),
+    ("MY PHONE WARRANTY", None), ("phone bought in MY", Market.MY),
+    ("ORD-MY-2001", None), ("SN-CN-1001", None),
+])
+def test_market_code_and_country_name_are_not_english_possessive_or_identifiers(text, market):
+    assert extract_context(text).market == market

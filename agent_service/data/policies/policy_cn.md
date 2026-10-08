@@ -4,6 +4,7 @@ title: 中国大陆手机售后保修政策（模拟）
 market: CN
 language: zh-CN
 version: "2026.01"
+simulated: true
 ---
 # 中国大陆手机售后保修政策（模拟）
 

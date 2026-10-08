@@ -77,6 +77,7 @@ FAQ_TERMS = (
     "coverage",
     "eligible",
 )
+CASE_CANCEL_TERMS = ("不要申请", "不想维修", "取消维修", "取消申请", "不申请", "do not want", "don't want", "cancel my repair")
 
 
 @dataclass(frozen=True)
@@ -97,11 +98,16 @@ def _contains(text: str, terms: tuple[str, ...]) -> bool:
 def classify_intent(text: str) -> Intent:
     """离线确定性路由是安全底座，LLM 只作为可选增强，不决定写操作。"""
 
+    if case_cancelled(text):
+        return Intent.GENERAL
     # 高风险请求进入政策证据门禁，不能落入普通排查或 Case Draft 路径。
     if _contains(text, HIGH_RISK_TERMS):
         return Intent.FAQ
     if _contains(text, STATUS_TERMS):
         return Intent.REPAIR_STATUS
+    if (_contains(text, CASE_TERMS) and _contains(text, ("需要什么", "哪些材料", "如何", "怎么申请", "怎么弄", "怎么操作", "how", "what")) and
+        not _contains(text, ("帮我", "我要", "我想", "请帮", "i need", "i want", "please"))):
+        return Intent.FAQ
     if _contains(text, CASE_TERMS):
         return Intent.CASE_REQUEST
     if _contains(text, TROUBLESHOOTING_TERMS):
@@ -109,6 +115,18 @@ def classify_intent(text: str) -> Intent:
     if _contains(text, FAQ_TERMS):
         return Intent.FAQ
     return Intent.GENERAL
+
+
+def case_cancelled(text: str) -> bool:
+    # 否定与申请动作之间允许短修饰语，但不跨句匹配，避免误伤后续明确申请。
+    return _contains(text, CASE_CANCEL_TERMS) or bool(re.search(
+        r"(?:不要|不想|不打算|不需要|不愿|暂不|先别|别)[^，。！？,.;!?]{0,8}"
+        r"(?:申请(?:售后)?维修|申请售后|报修|送修)", text
+    )) or bool(re.search(
+        r"\b(?:do\s+not|don't|not|never|would\s+not|wouldn't)\s+"
+        r"(?:(?:want|like|intend|ask|asking|you|to|help|me|submit|create|make|send|apply|for|a|any)\s+){0,6}"
+        r"(?:repair\s+request|after-sales\s+service|send\s+it\s+for\s+repair)\b", text, re.IGNORECASE
+    ))
 
 
 def _first_match(patterns: tuple[str, ...], text: str) -> str | None:
@@ -139,13 +157,20 @@ def extract_context(text: str) -> ExtractedContext:
     )
 
     lowered = text.lower()
+    market_text = re.sub(r"\b(?:ORD|SN)-[A-Z0-9-]+\b", "", text, flags=re.IGNORECASE)
     market = None
-    if "马来西亚" in text or "malaysia" in lowered or re.search(r"\bMY\b", text, re.IGNORECASE):
+    # 英语所有格 my/My 不是 MY 国家代码；单独代码或 country/market 标注仍兼容小写。
+    my_code = (market_text.strip().lower() == "my" or
+               re.search(r"(?:country|market|国家|市场)\s*[:：=]?\s*my\b", market_text, re.IGNORECASE) or
+               re.search(r"\b(?:in|from)\s+MY\b", market_text) or
+               (re.search(r"\bMY\b", market_text) and re.search(r"[\u4e00-\u9fff]", market_text)))
+    if "马来西亚" in text or "malaysia" in market_text.lower() or my_code:
         market = Market.MY
-    elif "中国" in text or "china" in lowered or re.search(r"\bCN\b", text, re.IGNORECASE):
+    elif "中国" in text or "china" in market_text.lower() or re.search(r"\bCN\b", market_text, re.IGNORECASE):
         market = Market.CN
 
-    language = Language.EN_MY if re.search(r"\b(the|what|how|my|repair)\b", lowered) else Language.ZH_CN
+    language_text = re.sub(r"\b(?:ord|sn)-[a-z0-9-]+\b", "", lowered)
+    language = Language.EN_MY if re.search(r"\b(the|what|how|my|repair)\b", language_text) else Language.ZH_CN
     issue_category = "cannot_power_on" if _contains(text, POWER_TROUBLESHOOTING_TERMS) else "general_issue"
     return ExtractedContext(
         order_id=order_id,
