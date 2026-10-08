@@ -48,7 +48,7 @@ class HashEmbeddings(Embeddings):
         return self._embed(text)
 
 
-def build_embeddings(mode: str, model_name: str, dimensions: int) -> Embeddings:
+def build_embeddings(mode: str, model_name: str, dimensions: int, allow_fallback: bool = True) -> Embeddings:
     """生产可选本地多语言 embedding，离线/CI 默认使用确定性 Hash embedding。"""
 
     if mode.lower() == "huggingface":
@@ -61,7 +61,9 @@ def build_embeddings(mode: str, model_name: str, dimensions: int) -> Embeddings:
                 encode_kwargs={"normalize_embeddings": True},
             )
         except Exception as exc:  # noqa: BLE001 - 本地模型加载失败时必须保留离线 fallback。
-            logger.error("HuggingFace Embedding 初始化失败，回退 Hash Embedding: %s", exc)
+            logger.error("Embedding 初始化失败: type=%s", type(exc).__name__)
+            if not allow_fallback:
+                raise RuntimeError("Embedding 不可用，严格模式禁止降级") from None
     return HashEmbeddings(dimensions=dimensions)
 
 
@@ -90,6 +92,10 @@ def _load_frontmatter(path: Path) -> Document:
 class PolicyStore:
     """政策检索端口。默认内存向量库，配置 pgvector 时使用 PostgreSQL。"""
 
+    @staticmethod
+    def is_unsupported(query: str) -> bool:
+        return any(term.lower() in query.lower() for term in (*UNSUPPORTED_POLICY_TERMS, *UNSUPPORTED_PRODUCT_TERMS))
+
     def __init__(
         self,
         policy_dir: str | Path,
@@ -98,22 +104,44 @@ class PolicyStore:
         embedding_mode: str = "hash",
         embedding_model: str = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
         embedding_dimensions: int = 256,
+        allow_fallback: bool = True,
+        require_approved: bool = False,
     ) -> None:
         self.policy_dir = Path(policy_dir)
         self.backend = backend
         self.database_url = database_url
+        self.allow_fallback = allow_fallback
+        self.require_approved = require_approved
+        self.degraded = False
         self.documents = self._load_documents()
-        self.embeddings = build_embeddings(embedding_mode, embedding_model, embedding_dimensions)
+        self.embeddings = build_embeddings(embedding_mode, embedding_model, embedding_dimensions, allow_fallback)
         self.embedding_dimensions = embedding_dimensions
         self.vector_store = InMemoryVectorStore.from_documents(self.documents, self.embeddings)
         self.pg_vector_store = None
         if backend == "pgvector" and database_url:
             self._try_create_pgvector(database_url)
+        if backend == "pgvector" and self.pg_vector_store is None:
+            self.degraded = True
+        if backend == "pgvector" and self.pg_vector_store is None and not allow_fallback:
+            raise RuntimeError("pgvector 不可用，严格模式禁止降级")
 
     def _load_documents(self) -> list[Document]:
         if not self.policy_dir.exists():
             return []
-        return [_load_frontmatter(path) for path in sorted(self.policy_dir.glob("*.md"))]
+        documents = [_load_frontmatter(path) for path in sorted(self.policy_dir.glob("*.md"))]
+        if not self.allow_fallback and not documents:
+            raise ValueError("严格模式要求非空政策目录")
+        for document in documents:
+            if not self._valid_document(document):
+                raise ValueError("政策必须有合法市场、版本、来源标识、语言和内容")
+        return documents
+
+    def _valid_document(self, document: Document) -> bool:
+        metadata = document.metadata
+        return 0 < len(document.page_content.strip()) <= 4000 and metadata.get("market") in {"CN", "MY"} and all(
+            isinstance(metadata.get(key), str) and metadata[key].strip()
+            for key in ("policy_id", "title", "version", "language")
+        ) and (not self.require_approved or (metadata.get("approved") is True and metadata.get("simulated") is not True))
 
     def _try_create_pgvector(self, database_url: str) -> None:
         """创建 PGVector 适配器；数据库不可用时保留内存 fallback。"""
@@ -127,6 +155,7 @@ class PolicyStore:
                 embedding_length=self.embedding_dimensions,
                 collection_name="globalcare_policy",
                 pre_delete_collection=False,
+                engine_args={"connect_args": {"connect_timeout": 3, "options": "-c statement_timeout=3000"}},
             )
         except Exception:  # noqa: BLE001 - pgvector 不可用不能阻断离线 FAQ。
             # readyz 会报告 pgvector 不可用，不能让 FAQ 离线模式整体不可启动。
@@ -158,11 +187,17 @@ class PolicyStore:
                 candidate_docs = self.pg_vector_store.similarity_search(
                     query, k=max(top_k * 3, top_k), filter={"market": normalized_market}
                 )
+                self.degraded = False
             except Exception:  # noqa: BLE001 - 向量检索失败时使用确定性 fallback。
+                self.degraded = True
+                if not self.allow_fallback:
+                    raise RuntimeError("政策检索不可用，严格模式禁止降级") from None
                 candidate_docs = self._memory_search(query, normalized_market, top_k)
         else:
             candidate_docs = self._memory_search(query, normalized_market, top_k)
-        return [self._to_evidence(doc, query) for doc in candidate_docs[:top_k]]
+        candidate_docs = [doc for doc in candidate_docs if doc.metadata.get("market") == normalized_market and self._valid_document(doc)]
+        backend = "pgvector" if self.pg_vector_store is not None and not self.degraded else "memory"
+        return [self._to_evidence(doc, query).model_copy(update={"retrieval_backend": backend, "degraded": self.degraded}) for doc in candidate_docs[:top_k]]
 
     def _memory_search(self, query: str, market: str, top_k: int) -> list[Document]:
         results = self.vector_store.similarity_search(query, k=max(len(self.documents), top_k * 4))
@@ -199,7 +234,8 @@ class PolicyStore:
         overlap = len(query_tokens.intersection(content_tokens))
         score = min(0.99, 0.55 + overlap / max(len(query_tokens), 1) * 0.4)
         metadata = document.metadata
-        excerpt = " ".join(document.page_content.split())[:360]
+        # 保留完整短政策与换行，不能截断排查步骤或安全警告后当成答案。
+        excerpt = document.page_content[:4000]
         return PolicyEvidence(
             policy_id=str(metadata.get("policy_id", "unknown-policy")),
             title=str(metadata.get("title", "售后政策")),

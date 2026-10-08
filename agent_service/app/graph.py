@@ -1,7 +1,10 @@
 import logging
+import asyncio
+import re
 from datetime import datetime, timezone
 from typing import Any, Literal
 from uuid import uuid4
+from pydantic import ValidationError
 
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
@@ -19,11 +22,13 @@ from .constants import (
     ToolName,
     ToolStatus,
 )
-from .intent import issue_summary
+from .intent import case_cancelled, classify_intent, extract_context, issue_summary
 from .model_factory import AgentModel
 from .permissions import assert_application_write_allowed, assert_model_tool_allowed
 from .policy_store import PolicyStore
-from .state import AfterSalesState
+from .state import AfterSalesState, bounded_messages
+from .schemas import BusinessFact, DraftWriteResult
+from .store import StoreRequestError
 
 logger = logging.getLogger(__name__)
 
@@ -83,33 +88,79 @@ def build_graph(
     query_gateway: BusinessGateway,
     draft_gateway: BusinessGateway,
     max_steps: int = 12,
+    max_tool_calls: int = 3,
     checkpointer: Any | None = None,
+    draft_store: Any | None = None,
 ):
     """构造单一售后 Agent 状态图；写入节点与模型工具权限在应用层固定。"""
 
     async def classify_node(state: AfterSalesState) -> dict[str, Any]:
+        previous_intent = state.get("intent")
+        message = _last_user_message(state)
+        explicit = extract_context(message)
+        new_subject = bool(re.search(r"另一[台部个]|换一[台部]|新的故障|另一个问题|another (phone|device)|new (phone|device)", message, re.IGNORECASE))
         is_case_continuation = (
             state.get("intent") == Intent.CASE_REQUEST.value
-            and "order_id_or_serial_number" in state.get("missing_fields", [])
+            and bool(state.get("missing_fields"))
         )
         decision = await model.classify(
             _last_user_message(state),
             current_market=state.get("market"),
             current_language=state.get("language"),
         )
+        # 模型建议不是写入授权；标识必须来自原话，市场来自用户选择/原话或业务核验。
+        raw_intent = classify_intent(message)
+        supplied_missing = bool(("order_id_or_serial_number" in state.get("missing_fields", []) and (explicit.order_id or explicit.serial_number)) or
+                                ("market" in state.get("missing_fields", []) and explicit.market))
+        is_case_continuation = is_case_continuation and supplied_missing and raw_intent in {Intent.GENERAL, Intent.TROUBLESHOOTING, Intent.CASE_REQUEST} and not case_cancelled(message)
+        decision = decision.model_copy(update={
+            "order_id": decision.order_id if decision.order_id and decision.order_id.lower() in message.lower() else explicit.order_id,
+            "serial_number": decision.serial_number if decision.serial_number and decision.serial_number.lower() in message.lower() else explicit.serial_number,
+            "issue_category": explicit.issue_category,
+        })
+        if decision.intent == Intent.CASE_REQUEST and raw_intent != Intent.CASE_REQUEST and not is_case_continuation:
+            decision = decision.model_copy(update={"intent": raw_intent})
+        if case_cancelled(message):
+            decision = decision.model_copy(update={"intent": Intent.GENERAL})
         # 用户补订单号/SN 时延续上一轮受理，不把“无法开机”重新当成独立排查咨询。
-        if is_case_continuation and (decision.order_id or decision.serial_number):
+        if is_case_continuation and decision.intent in {
+            Intent.GENERAL, Intent.TROUBLESHOOTING, Intent.CASE_REQUEST
+        }:
             decision = decision.model_copy(update={"intent": Intent.CASE_REQUEST})
+        # 查询进度的标识不能默认为用户本轮同意报修的设备。
+        reuse_identity = previous_intent == decision.intent.value or (
+            previous_intent == Intent.TROUBLESHOOTING.value and decision.intent == Intent.CASE_REQUEST
+        )
+        reuse_identity = reuse_identity and not new_subject
+        order_id = decision.order_id or (state.get("order_id") if reuse_identity else None)
+        serial_number = decision.serial_number or (state.get("serial_number") if reuse_identity else None)
+        if decision.intent == Intent.REPAIR_STATUS and state.get("case_draft_id") and not new_subject:
+            known_draft = state.get("case_draft") or {}
+            order_id = order_id or known_draft.get("order_id")
+            serial_number = serial_number or known_draft.get("serial_number")
+        if explicit.order_id and explicit.order_id != state.get("order_id"):
+            serial_number = decision.serial_number
+        if explicit.serial_number and explicit.serial_number != state.get("serial_number"):
+            order_id = decision.order_id
+        draft = state.get("case_draft") or {}
+        different_device = new_subject or bool(
+            (explicit.order_id and explicit.order_id != draft.get("order_id"))
+            or (explicit.serial_number and explicit.serial_number != draft.get("serial_number"))
+        )
+        preserve_symptom = decision.intent == Intent.CASE_REQUEST and reuse_identity and decision.issue_category == "general_issue"
         return _step(
             state,
             intent=decision.intent.value,
-            market=decision.market.value if decision.market else state.get("market"),
-            language=decision.language.value if decision.language else state.get("language"),
-            order_id=decision.order_id or state.get("order_id"),
-            serial_number=decision.serial_number or state.get("serial_number"),
-            product_model=decision.product_model or state.get("product_model"),
-            issue_category=decision.issue_category,
-            issue_summary=issue_summary(_last_user_message(state)),
+            market=explicit.market.value if explicit.market else state.get("market"),
+            language=state.get("language") or (decision.language.value if decision.language else None),
+            order_id=order_id,
+            serial_number=serial_number,
+            product_model=decision.product_model or (state.get("product_model") if reuse_identity else None),
+            issue_category=state.get("issue_category") if preserve_symptom else decision.issue_category,
+            issue_summary=state.get("issue_summary") if preserve_symptom else issue_summary(message),
+            case_draft=None if different_device else state.get("case_draft"),
+            case_draft_id=None if different_device else state.get("case_draft_id"),
+            missing_fields=[],
             phase=AgentPhase.AI_ACTIVE.value,
             conversation_status=ConversationStatus.AI_ACTIVE.value,
         )
@@ -136,9 +187,12 @@ def build_graph(
                 phase=AgentPhase.AI_CANNOT_RESOLVE.value,
                 conversation_status=ConversationStatus.AI_CANNOT_RESOLVE.value,
             )
-        evidence = policy_store.retrieve(
-            state.get("issue_summary") or _last_user_message(state), market, top_k=3
-        )
+        try:
+            evidence = [] if policy_store.is_unsupported(_last_user_message(state)) else await asyncio.to_thread(
+                policy_store.retrieve, state.get("issue_summary") or _last_user_message(state), market, top_k=3
+            )
+        except Exception:
+            evidence = []
         if not evidence:
             return _step(
                 state,
@@ -159,8 +213,13 @@ def build_graph(
         tool_events: list[dict[str, Any]] = []
         results: list[dict[str, Any]] = []
         intent = state.get("intent")
+        tool_count = int(state.get("tool_call_count", 0))
 
         async def call_tool(tool_name: ToolName, payload: dict[str, Any]) -> dict[str, Any]:
+            nonlocal tool_count
+            if tool_count >= max_tool_calls:
+                raise AgentRunError("Agent 业务工具调用数已达到上限")
+            tool_count += 1
             assert_model_tool_allowed(tool_name.value)
             tool_events.append(
                 {"tool_name": tool_name.value, "status": ToolStatus.RUNNING.value, "trace_id": str(uuid4())}
@@ -174,6 +233,20 @@ def build_graph(
                     result = await query_gateway.query_repair_status(
                         order_id=payload.get("order_id"), serial_number=payload.get("serial_number")
                     )
+                try:
+                    fact = BusinessFact.model_validate(result)
+                except ValidationError:
+                    raise BusinessGatewayError("业务结果缺少合法必需字段", code="TOOL_INVALID_RESPONSE", retryable=False) from None
+                if ((payload.get("order_id") and fact.order_id.upper() != str(payload["order_id"]).upper()) or
+                    (payload.get("serial_number") and fact.serial_number.upper() != str(payload["serial_number"]).upper()) or
+                    (tool_name == ToolName.QUERY_REPAIR_STATUS and not fact.status)):
+                    raise BusinessGatewayError("业务结果与查询标识不一致或缺少状态", code="TOOL_INVALID_RESPONSE", retryable=False)
+                # 身份源是签名验证后的 JWT，不是用户在消息中自报的客户号。
+                if state.get("authorized_customer_id") and (
+                    result.get("customer_id") != state["authorized_customer_id"]
+                    or result.get("tenant_id") != state.get("authorized_tenant_id")
+                ):
+                    raise BusinessGatewayError("无权访问该业务记录", code="BUSINESS_FORBIDDEN", retryable=False)
                 tool_events[-1]["status"] = ToolStatus.SUCCESS.value
                 return result
             except BusinessGatewayError as exc:
@@ -200,6 +273,7 @@ def build_graph(
                 state,
                 business_results=results,
                 tool_events=tool_events,
+                tool_call_count=tool_count,
                 human_required=True,
                 human_reason=str(exc),
                 error_code=exc.code,
@@ -211,11 +285,13 @@ def build_graph(
             inferred_market = results[0].get("market")
         else:
             inferred_market = state.get("market")
-        if state.get("market") and results and results[0].get("market") != state.get("market"):
+        if results and (any(item.get("market") != inferred_market for item in results) or
+                        len({(item["order_id"], item["serial_number"]) for item in results}) != 1):
             return _step(
                 state,
                 business_results=results,
                 tool_events=tool_events,
+                tool_call_count=tool_count,
                 human_required=True,
                 human_reason="订单所属市场与请求市场不一致",
                 error_code="MARKET_MISMATCH",
@@ -226,8 +302,9 @@ def build_graph(
             state,
             business_results=results,
             tool_events=tool_events,
+            tool_call_count=tool_count,
             market=inferred_market,
-            product_model=state.get("product_model") or (results[0].get("product_model") if results else None),
+            product_model=results[0].get("product_model") if results else None,
             customer_id=results[0].get("customer_id") if results else None,
             customer_context=results[0] if results else None,
             phase=AgentPhase.QUERYING_BUSINESS_DATA.value,
@@ -260,7 +337,7 @@ def build_graph(
         required = ("market", "issue_category", "issue_summary", "suggested_resolution")
         valid = all(draft.get(key) for key in required) and bool(draft.get("policy_evidence")) and bool(
             state.get("business_results")
-        )
+        ) and all(evidence.get("market") == draft.get("market") and evidence.get("version") for evidence in draft.get("policy_evidence", []))
         if not valid:
             return _step(
                 state,
@@ -274,18 +351,37 @@ def build_graph(
 
     async def create_case_draft_node(state: AfterSalesState) -> dict[str, Any]:
         assert_application_write_allowed(ToolName.CREATE_CASE_DRAFT.value)
+        if int(state.get("tool_call_count", 0)) >= max_tool_calls:
+            raise AgentRunError("Agent 业务工具调用数已达到上限")
+        tool_count = int(state.get("tool_call_count", 0)) + 1
         try:
-            result = await draft_gateway.create_case_draft(state["case_draft"])
-        except BusinessGatewayError as exc:
+            result = await draft_store.reserve_draft_write(state["case_draft"]) if draft_store else None
+            if result is None:
+                result = await draft_gateway.create_case_draft(state["case_draft"])
+            try:
+                receipt = DraftWriteResult.model_validate(result)
+            except ValidationError:
+                raise BusinessGatewayError("草稿创建结果格式无效，需要核对下游结果", code="TOOL_INVALID_RESPONSE", retryable=False) from None
+            if ((receipt.market and receipt.market.value != state["market"]) or
+                (receipt.draft_fingerprint and receipt.draft_fingerprint != state["case_draft"]["draft_fingerprint"]) or
+                (receipt.conversation_id and str(receipt.conversation_id) != state["conversation_id"])):
+                raise BusinessGatewayError("草稿回执与请求不一致，需要核对下游结果", code="TOOL_INVALID_RESPONSE", retryable=False)
+            if draft_store:
+                await draft_store.confirm_draft_write(state["case_draft"]["draft_fingerprint"],
+                                                      {**result, "created_at": receipt.created_at.isoformat() if receipt.created_at else state["case_draft"]["created_at"]})
+        except (BusinessGatewayError, StoreRequestError) as exc:
             return _step(
                 state,
                 human_required=True,
                 human_reason=str(exc),
                 error_code=exc.code,
+                tool_call_count=tool_count,
                 phase=AgentPhase.AI_CANNOT_RESOLVE.value,
                 conversation_status=ConversationStatus.AI_CANNOT_RESOLVE.value,
             )
-        draft = {**state["case_draft"], **result}
+        draft = {**state["case_draft"], "case_draft_id": str(receipt.case_draft_id),
+                 "created_at": receipt.created_at.isoformat() if receipt.created_at else state["case_draft"]["created_at"],
+                 "status": "DRAFT_CREATED", "idempotent_replay": receipt.idempotent_replay}
         return _step(
             state,
             case_draft=draft,
@@ -293,6 +389,7 @@ def build_graph(
             phase=AgentPhase.CASE_DRAFT_CREATED.value,
             conversation_status=ConversationStatus.CASE_DRAFT_CREATED.value,
             review_required=True,
+            tool_call_count=tool_count,
         )
 
     async def reuse_draft_node(state: AfterSalesState) -> dict[str, Any]:
@@ -312,19 +409,22 @@ def build_graph(
                 f"{state.get('human_reason') or '超出当前 Agent 范围'}。"
                 "你可以联系传统人工客服继续处理。"
             )
-        elif state.get("intent") == Intent.TROUBLESHOOTING.value:
-            reply = (
-                "可以先按以下顺序排查：\n"
-                "1. 使用合规充电器充电 30 分钟并检查线缆、充电口；\n"
-                "2. 长按电源键 10 秒尝试强制重启；\n"
-                "3. 如果设备发热、冒烟或进液，请立即停止操作并联系人工客服。"
-            )
-        elif state.get("intent") == Intent.FAQ.value:
+        elif state.get("intent") in {Intent.TROUBLESHOOTING.value, Intent.FAQ.value}:
             evidence = state.get("policy_evidence", [])
-            reply = f"根据{evidence[0]['title']}（版本 {evidence[0]['version']}），当前市场适用的手机有限保修期为 12 个月，以订单和购买凭证核验结果为准。"
+            content = evidence[0]["excerpt"]
+            lines = [line.lstrip("- ") for line in content.splitlines() if line.startswith("- ")]
+            terms = (("无法开机排查", "Cannot power on:") if state.get("intent") == Intent.TROUBLESHOOTING.value else
+                     ("申请维修", "Repair request:") if "材料" in _last_user_message(state) else
+                     ("有限保修期", "Limited warranty:"))
+            selected = [line for line in lines if any(term in line for term in terms)]
+            if state.get("language") == "zh-CN" and any(any("\u4e00" <= char <= "\u9fff" for char in line) for line in selected):
+                selected = [line for line in selected if any("\u4e00" <= char <= "\u9fff" for char in line)]
+            reply = f"根据{evidence[0]['title']}（版本 {evidence[0]['version']}），政策原文如下：\n" + "\n".join(selected or lines or [content])
         elif state.get("intent") == Intent.REPAIR_STATUS.value:
             reply = _status_text((state.get("business_results") or [{}])[0])
-        elif state.get("case_draft_id"):
+            if state.get("case_draft_id"):
+                reply += "这是既有维修记录；保存草稿不等于已创建正式案例或维修工单。"
+        elif state.get("intent") == Intent.CASE_REQUEST.value and state.get("case_draft_id"):
             reply = (
                 f"已根据订单和政策信息保存 Case Draft（{state['case_draft_id']}）。"
                 "Agent 侧任务已完成；正式 Case 和维修工单由既有售后系统继续处理。"
@@ -340,6 +440,8 @@ def build_graph(
 
     def after_classify(state: AfterSalesState) -> Literal["collect_info", "retrieve_policy", "query_business", "reuse_draft", "render_response"]:
         intent = state.get("intent")
+        if policy_store.is_unsupported(_last_user_message(state)):
+            return "retrieve_policy"
         if intent == Intent.GENERAL.value:
             return "render_response"
         if intent == Intent.CASE_REQUEST.value and state.get("case_draft_id"):
@@ -383,15 +485,22 @@ def build_graph(
         return "render_response"
 
     graph = StateGraph(AfterSalesState)
-    graph.add_node("classify_intent", classify_node)
-    graph.add_node("collect_info", collect_info_node)
-    graph.add_node("retrieve_policy", retrieve_policy_node)
-    graph.add_node("query_business", query_business_node)
-    graph.add_node("build_case_draft", build_case_draft_node)
-    graph.add_node("validate_draft", validate_draft_node)
-    graph.add_node("create_case_draft", create_case_draft_node)
-    graph.add_node("reuse_draft", reuse_draft_node)
-    graph.add_node("render_response", render_response_node)
+    def bounded(node):
+        async def run(state):
+            # 门禁必须在节点执行前生效，不能写下游后才发现已超限。
+            if int(state.get("step_count", 0)) >= max_steps:
+                raise AgentRunError("Agent 最大步骤数已达到上限")
+            return await node(state)
+        return run
+
+    for name, node in (
+        ("classify_intent", classify_node), ("collect_info", collect_info_node),
+        ("retrieve_policy", retrieve_policy_node), ("query_business", query_business_node),
+        ("build_case_draft", build_case_draft_node), ("validate_draft", validate_draft_node),
+        ("create_case_draft", create_case_draft_node), ("reuse_draft", reuse_draft_node),
+        ("render_response", render_response_node),
+    ):
+        graph.add_node(name, bounded(node))
     graph.add_edge(START, "classify_intent")
     graph.add_conditional_edges("classify_intent", after_classify)
     graph.add_conditional_edges("collect_info", after_collect)
@@ -442,7 +551,7 @@ class GraphService:
                     raise AgentRunError("Agent 最大步骤数已达到上限")
                 for key, value in patch.items():
                     if key == "messages":
-                        state[key] = [*state.get(key, []), *value]
+                        state[key] = bounded_messages(state.get(key, []), value)
                     else:
                         state[key] = value
                 yield node_name, patch, state
