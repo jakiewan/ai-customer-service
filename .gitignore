@@ -87,3 +87,10 @@ experience/*.docx
 **/*简历*
 **/*resume*
 **/*证件照*
+/.history/*
+*.jpg
+*.png
+*.svg
+*.md
+*.html
+
