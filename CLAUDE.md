@@ -143,3 +143,13 @@ Spring Boot (domain_service)             ← /internal/* 模拟业务接口 + Ca
 - **草稿市场与对话不一致** → 业务事实的 `market` 字段优先级高于用户声明,`graph.query_business_node` 会触发 `MARKET_MISMATCH` 拒绝路径。
 - **离线意图路由命中 FAQ 但期望 TROUBLESHOOTING** → 检查文本是否包含 `UNSUPPORTED_POLICY_TERMS`(退款/退货/换机/赔偿等),`intent.classify_intent` 会**强制降级**为 FAQ。
 - **pytest 跑通但服务启动失败** → 多半是 `pydantic_settings` 在 `.env` 中读取了旧值;启动前显式 `export` 环境变量覆盖。
+
+## 知识资产与已知风险
+
+- `.learnings/LEARNINGS.md` — 工作区级自我改进日志,按 `[LRN-YYYYMMDD-NNN]` 编号;架构、幂等或一致性改动前先扫一遍 `Status: pending` 条目,避免重复踩坑。
+- `.learnings/ERRORS.md` — 已记录的命令/集成错误与解决方案。
+
+**关键 pending 风险**(不要据此声称已生产级):
+
+- `LRN-20260901-001` — **消息级幂等存在并发缺口**。`InMemoryStore.append_user_message` 在处理完成才写结果,同会话并发 5 次同 `client_message_id` 会重复执行完整图并发出重复 `case_draft_created`(下游 `draft_fingerprint` 仍去重,数据层正确但事件/Token 浪费)。本文件"幂等消息"段仅描述单线程视角,生产化前需补 single-flight 或原子 PROCESSING/SUCCEEDED 状态。
+- `LRN-20260830-006` — **RAG 拒答门禁依赖负例覆盖**。新增市场或产品类型时,必须补正例 + 跨市场负例 + 高风险负例(退款/退货/换机/赔偿等 `UNSUPPORTED_POLICY_TERMS`)+ 非支持产品负例(`UNSUPPORTED_PRODUCT_TERMS`),并用真实 pgvector 跑一遍,不能只测内存 VectorStore。
