@@ -36,8 +36,8 @@
     "width": 1600,
     "height": 1700,
     "sources": "main.py / service.py / graph.py / store.py / postgres_store.py / mcp_server.py / business.py",
-    "svg_sha256": "f2e78a7214f46e6e44f17e24881b9eef8ae8ed176bda0a653d49396547b40d4e",
-    "png_sha256": "1f2242e4de88127c240bd9db1601931987754adb30f4c5a12f4d36e8b7ae43fb"
+    "svg_sha256": "c35ee75078b545a0d8ff5a7a36e0f931b5960d58ab68f271726253e0370731b8",
+    "png_sha256": "dae06088905d4883d4e7c2829673afa4d7f8a1dff0b6577336e283de55032cbc"
   },
   {
     "file": "05-policy-and-data-flow",
@@ -46,8 +46,8 @@
     "width": 1600,
     "height": 1260,
     "sources": "policy_store.py / state.py / graph.py / schemas.py / service.py / migrations/001–003",
-    "svg_sha256": "59e183e0b204424d2a3f55ad549bd23b45f64bda8c6e9148c38e727aa78f763b",
-    "png_sha256": "ef51146eedcf4d80659d104b2a6744fc116bca108d8a98c5fe1e3e209e12f927"
+    "svg_sha256": "caf718c99c3dee469d01f6b5267d0db7735f185e49e939b226e6ab5903355ba4",
+    "png_sha256": "adb1f67152c2906faaa6794edb6097d9593aa03fd77e8211d156bf8ceeaf5578"
   },
   {
     "file": "06-security-and-idempotency",

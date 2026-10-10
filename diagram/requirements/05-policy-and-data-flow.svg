@@ -102,9 +102,9 @@
 <text x="584" y="930" font-size="21" style="fill:#54677d" font-weight="400" text-anchor="start">附 tool_trace_ids 与 draft_fingerprint。</text>
 </g>
 <polyline points="992,685 992,737 800,737 800,769" fill="none" stroke="#2463c5" stroke-width="2.3" marker-end="url(#arrow-blue)"/>
-<text x="728" y="723" font-size="19" text-anchor="middle" style="fill:#2463c5;paint-order:stroke;stroke:#fff;stroke-width:8;stroke-linejoin:round">有证据后按意图消费</text>
-<polyline points="432,685 432,769" fill="none" stroke="#2463c5" stroke-width="2.3" marker-end="url(#arrow-blue)"/>
-<text x="341" y="735" font-size="19" text-anchor="middle" style="fill:#2463c5;paint-order:stroke;stroke:#fff;stroke-width:8;stroke-linejoin:round">政策答复</text>
+<text x="1094" y="746" font-size="19" text-anchor="middle" style="fill:#2463c5;paint-order:stroke;stroke:#fff;stroke-width:8;stroke-linejoin:round">有效证据 → 维修草稿</text>
+<polyline points="932,685 932,715 288,715 288,769" fill="none" stroke="#2463c5" stroke-width="2.3" marker-end="url(#arrow-blue)"/>
+<text x="488" y="751" font-size="19" text-anchor="middle" style="fill:#2463c5;paint-order:stroke;stroke:#fff;stroke-width:8;stroke-linejoin:round">有效证据 → 政策答复</text>
 <g data-box="1072,769,480,181">
 <rect x="1072" y="769" width="480" height="181" rx="16" fill="#ecf8f6" stroke="#087c80"/>
 <rect x="1090" y="789" width="5" height="29" rx="2" fill="#087c80" stroke="none"/>

@@ -36,7 +36,7 @@
 <text x="1435" y="283" font-size="23" style="fill:#2463c5" font-weight="600" text-anchor="middle">Store</text>
 <line x1="1435" y1="302" x2="1435" y2="1457" stroke="#bccbda" stroke-dasharray="6 6"/>
 <polyline points="105,343 290,343" fill="none" stroke="#2463c5" stroke-width="2.3" marker-end="url(#arrow-blue)"/>
-<text x="113" y="333" font-size="18" text-anchor="start" style="fill:#2463c5;paint-order:stroke;stroke:#fff;stroke-width:8;stroke-linejoin:round">01  POST /conversations/{id}/messages/stream + client_message_id</text>
+<text x="113" y="333" font-size="18" text-anchor="start" style="fill:#2463c5;paint-order:stroke;stroke:#fff;stroke-width:8;stroke-linejoin:round">01  POST /api/v1/conversations/{conversation_id}/messages/stream + client_message_id</text>
 <polyline points="290,387 1435,387" fill="none" stroke="#2463c5" stroke-width="2.3" marker-end="url(#arrow-blue)"/>
 <text x="862.5" y="377" font-size="18" text-anchor="middle" style="fill:#2463c5;paint-order:stroke;stroke:#fff;stroke-width:8;stroke-linejoin:round">02  认证后校验会话所有权</text>
 <polyline points="290,431 475,431" fill="none" stroke="#2463c5" stroke-width="2.3" marker-end="url(#arrow-blue)"/>
