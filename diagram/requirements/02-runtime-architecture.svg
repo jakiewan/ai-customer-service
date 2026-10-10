@@ -1,0 +1,137 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1210" viewBox="0 0 1600 1210" role="img" aria-labelledby="title desc">
+<title id="title">运行架构：网页、Agent、政策库与模拟业务域服务</title><desc id="desc">把模型理解、证据检索和业务写入分开，建立清晰的权限边界。</desc>
+<defs><marker id="arrow-blue" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 Z" fill="#2463c5"/></marker><marker id="arrow-teal" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 Z" fill="#087c80"/></marker><marker id="arrow-amber" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 Z" fill="#916013"/></marker><marker id="arrow-red" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 Z" fill="#ab394c"/></marker><marker id="arrow-gray" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 Z" fill="#54677d"/></marker></defs>
+<style>text{font-family:"PingFang SC","Noto Sans CJK SC","Microsoft YaHei",sans-serif;fill:#172c45} .code{font-family:"SFMono-Regular",Consolas,"PingFang SC",monospace}</style>
+<rect width="1600" height="1210" fill="#fff"/>
+<rect width="1600" height="12" fill="#2463c5"/>
+<text x="48" y="51" font-size="19" style="fill:#54677d" font-weight="400" text-anchor="start">GLOBALCARE  /  当前实现图集  /  02</text>
+<text x="48" y="104" font-size="37" style="fill:#172c45" font-weight="600" text-anchor="start">运行架构：网页、Agent、政策库与模拟业务域服务</text>
+<rect x="48" y="129" width="1504" height="68" rx="12" fill="#eff5ff" stroke="none"/>
+<text x="72" y="172" font-size="25" style="fill:#2463c5" font-weight="600" text-anchor="start">解决的问题：把模型理解、证据检索和业务写入分开，建立清晰的权限边界。</text>
+<text x="48" y="1163" font-size="18" style="fill:#54677d" font-weight="400" text-anchor="start">源码快照 b764afe · 2026-10-10 · 静态核对；业务与政策为模拟数据，图示不代表生产验收。</text>
+<text x="48" y="1190" font-size="16" style="fill:#54677d" font-weight="400" text-anchor="start">依据：main.py / service.py / graph.py / business.py / mcp_server.py / DomainController.java</text>
+<g data-box="48,241,280,150">
+<rect x="48" y="241" width="280" height="150" rx="16" fill="#eff5ff" stroke="#2463c5"/>
+<rect x="66" y="261" width="5" height="29" rx="2" fill="#2463c5" stroke="none"/>
+<text x="84" y="285" font-size="25" style="fill:#2463c5" font-weight="600" text-anchor="start">Vue 3 网页</text>
+<text x="72" y="319" font-size="18" style="fill:#2463c5" font-weight="400" text-anchor="start" class="code">frontend/index.html</text>
+<text x="72" y="346" font-size="21" style="fill:#54677d" font-weight="400" text-anchor="start">创建会话 / 提交消息。</text>
+<text x="72" y="374" font-size="21" style="fill:#54677d" font-weight="400" text-anchor="start">消费 SSE、证据与草稿。</text>
+</g>
+<g data-box="416,241,310,150">
+<rect x="416" y="241" width="310" height="150" rx="16" fill="#eff5ff" stroke="#2463c5"/>
+<rect x="434" y="261" width="5" height="29" rx="2" fill="#2463c5" stroke="none"/>
+<text x="452" y="285" font-size="25" style="fill:#2463c5" font-weight="600" text-anchor="start">FastAPI 接入层</text>
+<text x="440" y="319" font-size="18" style="fill:#2463c5" font-weight="400" text-anchor="start" class="code">main.py + auth.py</text>
+<text x="440" y="346" font-size="21" style="fill:#54677d" font-weight="400" text-anchor="start">Demo 或 RS256 JWT。</text>
+<text x="440" y="374" font-size="21" style="fill:#54677d" font-weight="400" text-anchor="start">会话所有权校验 / REST。</text>
+</g>
+<g data-box="826,241,330,150">
+<rect x="826" y="241" width="330" height="150" rx="16" fill="#ecf8f6" stroke="#087c80"/>
+<rect x="844" y="261" width="5" height="29" rx="2" fill="#087c80" stroke="none"/>
+<text x="862" y="285" font-size="25" style="fill:#087c80" font-weight="600" text-anchor="start">ConversationService</text>
+<text x="850" y="319" font-size="18" style="fill:#087c80" font-weight="400" text-anchor="start" class="code">service.py</text>
+<text x="850" y="346" font-size="21" style="fill:#54677d" font-weight="400" text-anchor="start">会话锁 / 消息幂等 / 审计。</text>
+<text x="850" y="374" font-size="21" style="fill:#54677d" font-weight="400" text-anchor="start">先保存结果，再发成功事件。</text>
+</g>
+<polyline points="328,316 416,316" fill="none" stroke="#2463c5" stroke-width="2.3" marker-end="url(#arrow-blue)"/>
+<text x="372.0" y="225" font-size="19" text-anchor="middle" style="fill:#2463c5;paint-order:stroke;stroke:#fff;stroke-width:8;stroke-linejoin:round">HTTP / SSE</text>
+<polyline points="726,316 826,316" fill="none" stroke="#2463c5" stroke-width="2.3" marker-end="url(#arrow-blue)"/>
+<text x="776.0" y="225" font-size="19" text-anchor="middle" style="fill:#2463c5;paint-order:stroke;stroke:#fff;stroke-width:8;stroke-linejoin:round">认证后调用</text>
+<g data-box="826,475,330,190">
+<rect x="826" y="475" width="330" height="190" rx="16" fill="#eff5ff" stroke="#2463c5"/>
+<rect x="844" y="495" width="5" height="29" rx="2" fill="#2463c5" stroke="none"/>
+<text x="862" y="519" font-size="25" style="fill:#2463c5" font-weight="600" text-anchor="start">LangGraph 状态图</text>
+<text x="850" y="553" font-size="18" style="fill:#2463c5" font-weight="400" text-anchor="start" class="code">graph.py</text>
+<text x="850" y="580" font-size="21" style="fill:#54677d" font-weight="400" text-anchor="start">固定节点与条件路由。</text>
+<text x="850" y="608" font-size="21" style="fill:#54677d" font-weight="400" text-anchor="start">模型意图受规则与上下文校验。</text>
+<text x="850" y="636" font-size="21" style="fill:#54677d" font-weight="400" text-anchor="start">步骤 / 工具 / 输入预算门禁。</text>
+</g>
+<polyline points="991,391 991,475" fill="none" stroke="#2463c5" stroke-width="2.3" marker-end="url(#arrow-blue)"/>
+<text x="861" y="437" font-size="19" text-anchor="middle" style="fill:#2463c5;paint-order:stroke;stroke:#fff;stroke-width:8;stroke-linejoin:round">按 conversation_id 执行</text>
+<g data-box="48,475,330,190">
+<rect x="48" y="475" width="330" height="190" rx="16" fill="#eff5ff" stroke="#2463c5"/>
+<rect x="66" y="495" width="5" height="29" rx="2" fill="#2463c5" stroke="none"/>
+<text x="84" y="519" font-size="25" style="fill:#2463c5" font-weight="600" text-anchor="start">AgentModel</text>
+<text x="72" y="553" font-size="18" style="fill:#2463c5" font-weight="400" text-anchor="start" class="code">model_factory.py</text>
+<text x="72" y="580" font-size="21" style="fill:#54677d" font-weight="400" text-anchor="start">LangChain 结构化意图识别。</text>
+<text x="72" y="608" font-size="21" style="fill:#54677d" font-weight="400" text-anchor="start">MiniMax 失败时回退规则。</text>
+<text x="72" y="636" font-size="21" style="fill:#54677d" font-weight="400" text-anchor="start">图节点依证据生成最终回复。</text>
+</g>
+<polyline points="826,531 378,531" fill="none" stroke="#2463c5" stroke-width="2.3" marker-end="url(#arrow-blue)"/>
+<text x="602.0" y="518" font-size="19" text-anchor="middle" style="fill:#2463c5;paint-order:stroke;stroke:#fff;stroke-width:8;stroke-linejoin:round">classify(message)</text>
+<g data-box="416,691,310,202">
+<rect x="416" y="691" width="310" height="202" rx="16" fill="#ecf8f6" stroke="#087c80"/>
+<rect x="434" y="711" width="5" height="29" rx="2" fill="#087c80" stroke="none"/>
+<text x="452" y="735" font-size="25" style="fill:#087c80" font-weight="600" text-anchor="start">PolicyStore</text>
+<text x="440" y="769" font-size="18" style="fill:#087c80" font-weight="400" text-anchor="start" class="code">policy_store.py</text>
+<text x="440" y="796" font-size="21" style="fill:#54677d" font-weight="400" text-anchor="start">CN / MY 政策 Markdown。</text>
+<text x="440" y="824" font-size="21" style="fill:#54677d" font-weight="400" text-anchor="start">Embedding → 按市场检索。</text>
+<text x="440" y="852" font-size="21" style="fill:#54677d" font-weight="400" text-anchor="start">memory / pgvector 可选。</text>
+<text x="440" y="880" font-size="21" style="fill:#54677d" font-weight="400" text-anchor="start">严格模式禁止静默降级。</text>
+</g>
+<polyline points="826,586 571,586 571,691" fill="none" stroke="#2463c5" stroke-width="2.3" marker-end="url(#arrow-blue)"/>
+<text x="642" y="574" font-size="19" text-anchor="middle" style="fill:#2463c5;paint-order:stroke;stroke:#fff;stroke-width:8;stroke-linejoin:round">retrieve(query, market)</text>
+<g data-box="1238,241,314,235">
+<rect x="1238" y="241" width="314" height="235" rx="16" fill="#ecf8f6" stroke="#087c80"/>
+<rect x="1256" y="261" width="5" height="29" rx="2" fill="#087c80" stroke="none"/>
+<text x="1274" y="285" font-size="25" style="fill:#087c80" font-weight="600" text-anchor="start">业务持久化与图记忆</text>
+<text x="1262" y="319" font-size="21" style="fill:#54677d" font-weight="400" text-anchor="start">Store：内存 / PostgreSQL。</text>
+<text x="1262" y="347" font-size="21" style="fill:#54677d" font-weight="400" text-anchor="start">会话、消息、草稿、审计、</text>
+<text x="1262" y="375" font-size="21" style="fill:#54677d" font-weight="400" text-anchor="start">消息请求结果与写入账本。</text>
+<text x="1262" y="403" font-size="21" style="fill:#54677d" font-weight="400" text-anchor="start">图记忆：MemorySaver 或</text>
+<text x="1262" y="431" font-size="21" style="fill:#54677d" font-weight="400" text-anchor="start">PostgresSaver。</text>
+<text x="1262" y="459" font-size="21" style="fill:#54677d" font-weight="400" text-anchor="start">保存图 checkpoint。</text>
+</g>
+<polyline points="1156,301 1238,301" fill="none" stroke="#2463c5" stroke-width="2.3" marker-end="url(#arrow-blue)"/>
+<text x="1197.0" y="225" font-size="19" text-anchor="middle" style="fill:#2463c5;paint-order:stroke;stroke:#fff;stroke-width:8;stroke-linejoin:round">业务状态</text>
+<polyline points="1156,554 1395,554 1395,476" fill="none" stroke="#2463c5" stroke-width="2.3" marker-end="url(#arrow-blue)"/>
+<text x="1320" y="541" font-size="19" text-anchor="middle" style="fill:#2463c5;paint-order:stroke;stroke:#fff;stroke-width:8;stroke-linejoin:round">checkpoint</text>
+<g data-box="826,727,330,208">
+<rect x="826" y="727" width="330" height="208" rx="16" fill="#fff7e8" stroke="#916013"/>
+<rect x="844" y="747" width="5" height="29" rx="2" fill="#916013" stroke="none"/>
+<text x="862" y="771" font-size="25" style="fill:#916013" font-weight="600" text-anchor="start">BusinessGateway</text>
+<text x="850" y="805" font-size="18" style="fill:#916013" font-weight="400" text-anchor="start" class="code">business.py + permissions.py</text>
+<text x="850" y="832" font-size="21" style="fill:#54677d" font-weight="400" text-anchor="start">读取：MCP / HTTP / Mock。</text>
+<text x="850" y="860" font-size="21" style="fill:#54677d" font-weight="400" text-anchor="start">写入：HTTP / Mock。</text>
+<text x="850" y="888" font-size="21" style="fill:#54677d" font-weight="400" text-anchor="start">模型只读；查询由图节点执行。</text>
+<text x="850" y="916" font-size="21" style="fill:#54677d" font-weight="400" text-anchor="start">草稿由应用节点负责写入。</text>
+</g>
+<polyline points="991,665 991,727" fill="none" stroke="#2463c5" stroke-width="2.3" marker-end="url(#arrow-blue)"/>
+<text x="1087" y="699" font-size="19" text-anchor="middle" style="fill:#2463c5;paint-order:stroke;stroke:#fff;stroke-width:8;stroke-linejoin:round">受控调用</text>
+<g data-box="48,937,330,182">
+<rect x="48" y="937" width="330" height="182" rx="16" fill="#eff5ff" stroke="#2463c5"/>
+<rect x="66" y="957" width="5" height="29" rx="2" fill="#2463c5" stroke="none"/>
+<text x="84" y="981" font-size="25" style="fill:#2463c5" font-weight="600" text-anchor="start">FastMCP 只读服务</text>
+<text x="72" y="1015" font-size="18" style="fill:#2463c5" font-weight="400" text-anchor="start" class="code">agent_service/mcp_server.py</text>
+<text x="72" y="1042" font-size="21" style="fill:#54677d" font-weight="400" text-anchor="start">query_order / query_device</text>
+<text x="72" y="1070" font-size="21" style="fill:#54677d" font-weight="400" text-anchor="start">query_repair_status</text>
+<text x="72" y="1098" font-size="21" style="fill:#54677d" font-weight="400" text-anchor="start">只暴露以上三个查询工具。</text>
+</g>
+<polyline points="826,822 773,822 773,909 213,909 213,937" fill="none" stroke="#2463c5" stroke-width="2.3" marker-end="url(#arrow-blue)"/>
+<text x="514" y="925" font-size="19" text-anchor="middle" style="fill:#2463c5;paint-order:stroke;stroke:#fff;stroke-width:8;stroke-linejoin:round">配置启用时走 MCP 查询</text>
+<g data-box="826,979,330,135">
+<rect x="826" y="979" width="330" height="135" rx="16" fill="#f2f5f9" stroke="#54677d"/>
+<rect x="844" y="999" width="5" height="29" rx="2" fill="#54677d" stroke="none"/>
+<text x="862" y="1023" font-size="25" style="fill:#54677d" font-weight="600" text-anchor="start">Spring Boot 模拟域服务</text>
+<text x="850" y="1057" font-size="21" style="fill:#54677d" font-weight="400" text-anchor="start">/internal/* 查询与草稿保存。</text>
+<text x="850" y="1085" font-size="21" style="fill:#54677d" font-weight="400" text-anchor="start">进程内数据 / 草稿指纹去重。</text>
+</g>
+<polyline points="378,1025 826,1025" fill="none" stroke="#2463c5" stroke-width="2.3" marker-end="url(#arrow-blue)"/>
+<text x="602.0" y="1012" font-size="19" text-anchor="middle" style="fill:#2463c5;paint-order:stroke;stroke:#fff;stroke-width:8;stroke-linejoin:round">MCP 服务转 HTTP 查询</text>
+<polyline points="991,935 991,979" fill="none" stroke="#916013" stroke-width="2.3" marker-end="url(#arrow-amber)"/>
+<text x="1245" y="962" font-size="19" text-anchor="middle" style="fill:#916013;paint-order:stroke;stroke:#fff;stroke-width:8;stroke-linejoin:round">HTTP POST /internal/case-drafts</text>
+<polyline points="1156,804 1196,804 1196,1040 1156,1040" fill="none" stroke="#2463c5" stroke-width="2.3" marker-end="url(#arrow-blue)" stroke-dasharray="7 5"/>
+<text x="1350" y="1040" font-size="19" text-anchor="middle" style="fill:#2463c5;paint-order:stroke;stroke:#fff;stroke-width:8;stroke-linejoin:round">可选 HTTP 直连查询</text>
+<g data-box="1238,665,314,238">
+<rect x="1238" y="665" width="314" height="238" rx="16" fill="#fff0f2" stroke="#ab394c"/>
+<rect x="1256" y="685" width="5" height="29" rx="2" fill="#ab394c" stroke="none"/>
+<text x="1274" y="709" font-size="25" style="fill:#ab394c" font-weight="600" text-anchor="start">图中配置说明</text>
+<text x="1262" y="743" font-size="21" style="fill:#54677d" font-weight="400" text-anchor="start">实线表示代码调用关系。</text>
+<text x="1262" y="771" font-size="21" style="fill:#54677d" font-weight="400" text-anchor="start">组件随配置按需启用。</text>
+<text x="1262" y="799" font-size="21" style="fill:#54677d" font-weight="400" text-anchor="start">默认：Mock / 内存 / Hash。</text>
+<text x="1262" y="827" font-size="21" style="fill:#54677d" font-weight="400" text-anchor="start">生产：JWT、PG、语义向量</text>
+<text x="1262" y="855" font-size="21" style="fill:#54677d" font-weight="400" text-anchor="start">严格政策与真实业务网关。</text>
+<text x="1262" y="883" font-size="21" style="fill:#54677d" font-weight="400" text-anchor="start">配置门禁 ≠ 生产验收。</text>
+</g>
+</svg>

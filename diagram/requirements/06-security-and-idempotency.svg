@@ -1,0 +1,86 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1420" viewBox="0 0 1600 1420" role="img" aria-labelledby="title desc">
+<title id="title">安全与幂等：会话身份、重复消息和未知写入结果</title><desc id="desc">阻止越权查单、重复跑图、重复写入，以及超时后盲目再次受理。</desc>
+<defs><marker id="arrow-blue" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 Z" fill="#2463c5"/></marker><marker id="arrow-teal" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 Z" fill="#087c80"/></marker><marker id="arrow-amber" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 Z" fill="#916013"/></marker><marker id="arrow-red" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 Z" fill="#ab394c"/></marker><marker id="arrow-gray" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 Z" fill="#54677d"/></marker></defs>
+<style>text{font-family:"PingFang SC","Noto Sans CJK SC","Microsoft YaHei",sans-serif;fill:#172c45} .code{font-family:"SFMono-Regular",Consolas,"PingFang SC",monospace}</style>
+<rect width="1600" height="1420" fill="#fff"/>
+<rect width="1600" height="12" fill="#2463c5"/>
+<text x="48" y="51" font-size="19" style="fill:#54677d" font-weight="400" text-anchor="start">GLOBALCARE  /  当前实现图集  /  06</text>
+<text x="48" y="104" font-size="37" style="fill:#172c45" font-weight="600" text-anchor="start">安全与幂等：会话身份、重复消息和未知写入结果</text>
+<rect x="48" y="129" width="1504" height="68" rx="12" fill="#eff5ff" stroke="none"/>
+<text x="72" y="172" font-size="25" style="fill:#2463c5" font-weight="600" text-anchor="start">解决的问题：阻止越权查单、重复跑图、重复写入，以及超时后盲目再次受理。</text>
+<text x="48" y="1373" font-size="18" style="fill:#54677d" font-weight="400" text-anchor="start">源码快照 b764afe · 2026-10-10 · 静态核对；业务与政策为模拟数据，图示不代表生产验收。</text>
+<text x="48" y="1400" font-size="16" style="fill:#54677d" font-weight="400" text-anchor="start">依据：auth.py / permissions.py / service.py / store.py / postgres_store.py / graph.py / business.py</text>
+<g data-box="48,226,1504,167">
+<rect x="48" y="226" width="1504" height="167" rx="16" fill="#eff5ff" stroke="#2463c5"/>
+<rect x="66" y="246" width="5" height="29" rx="2" fill="#2463c5" stroke="none"/>
+<text x="84" y="270" font-size="25" style="fill:#2463c5" font-weight="600" text-anchor="start">前置安全边界：凭证 → 会话所有权 → 业务归属 → 数据与写入门禁</text>
+<text x="72" y="304" font-size="21" style="fill:#54677d" font-weight="400" text-anchor="start">JWT 模式：RS256、issuer / audience / 有效期，可信 sub / tenant_id / customer_id；开发 Demo Token 是共享身份。</text>
+<text x="72" y="332" font-size="21" style="fill:#54677d" font-weight="400" text-anchor="start">API / Store 校验会话所有权；业务事实按签名身份校验客户与租户，再核验订单 / SN / 市场一致性。</text>
+<text x="72" y="360" font-size="21" style="fill:#54677d" font-weight="400" text-anchor="start">模型无写工具；图节点执行三个只读 query_*，create_case_draft 仅由应用写节点执行。</text>
+</g>
+<text x="48" y="442" font-size="26" style="fill:#172c45" font-weight="600" text-anchor="start">A. 消息级幂等：同一 ID 绑定同一有效请求</text>
+<text x="816" y="442" font-size="26" style="fill:#172c45" font-weight="600" text-anchor="start">B. 草稿写入幂等：先记意图，再调下游</text>
+<g data-box="48,471,736,137">
+<rect x="48" y="471" width="736" height="137" rx="16" fill="#eff5ff" stroke="#2463c5"/>
+<rect x="66" y="491" width="5" height="29" rx="2" fill="#2463c5" stroke="none"/>
+<text x="84" y="515" font-size="25" style="fill:#2463c5" font-weight="600" text-anchor="start">同会话 message_lock</text>
+<text x="72" y="549" font-size="21" style="fill:#54677d" font-weight="400" text-anchor="start">内存：进程内锁；Postgres：跨实例 advisory lock。</text>
+<text x="72" y="577" font-size="21" style="fill:#54677d" font-weight="400" text-anchor="start">并发 / 等锁 / 单轮时间有上限；串行后再检查消息。</text>
+</g>
+<g data-box="816,471,736,137">
+<rect x="816" y="471" width="736" height="137" rx="16" fill="#fff7e8" stroke="#916013"/>
+<rect x="834" y="491" width="5" height="29" rx="2" fill="#916013" stroke="none"/>
+<text x="852" y="515" font-size="25" style="fill:#916013" font-weight="600" text-anchor="start">构建 draft_fingerprint</text>
+<text x="840" y="549" font-size="21" style="fill:#54677d" font-weight="400" text-anchor="start">SHA256：会话、市场、问题类别 / 摘要、订单、SN、处置建议。</text>
+<text x="840" y="577" font-size="21" style="fill:#54677d" font-weight="400" text-anchor="start">相同指纹复用账本与下游草稿；不自动重试写操作。</text>
+</g>
+<polyline points="416,608 416,650" fill="none" stroke="#2463c5" stroke-width="2.3" marker-end="url(#arrow-blue)"/>
+<polyline points="1184,608 1184,650" fill="none" stroke="#916013" stroke-width="2.3" marker-end="url(#arrow-amber)"/>
+<g data-box="48,650,736,226">
+<rect x="48" y="650" width="736" height="226" rx="16" fill="#eff5ff" stroke="#2463c5"/>
+<rect x="66" y="670" width="5" height="29" rx="2" fill="#2463c5" stroke="none"/>
+<text x="84" y="694" font-size="25" style="fill:#2463c5" font-weight="600" text-anchor="start">append_user_message：请求 ID / 指纹 / 结果</text>
+<text x="72" y="728" font-size="21" style="fill:#54677d" font-weight="400" text-anchor="start">首次 ID：登记指纹并保存用户消息 → 执行图。</text>
+<text x="72" y="756" font-size="21" style="fill:#54677d" font-weight="400" text-anchor="start">同 ID 不同有效请求：IDEMPOTENCY_CONFLICT。</text>
+<text x="72" y="784" font-size="21" style="fill:#54677d" font-weight="400" text-anchor="start">同 ID、同请求、有结果：重放实际结果，不重跑图。</text>
+<text x="72" y="812" font-size="21" style="fill:#54677d" font-weight="400" text-anchor="start">同 ID、同请求、无结果：REQUEST_INDETERMINATE。</text>
+<text x="72" y="840" font-size="21" style="fill:#54677d" font-weight="400" text-anchor="start">已缓存失败也重放 error + done，不伪造成功。</text>
+</g>
+<g data-box="816,650,736,226">
+<rect x="816" y="650" width="736" height="226" rx="16" fill="#fff7e8" stroke="#916013"/>
+<rect x="834" y="670" width="5" height="29" rx="2" fill="#916013" stroke="none"/>
+<text x="852" y="694" font-size="25" style="fill:#916013" font-weight="600" text-anchor="start">reserve_draft_write：指纹 / 意图 / 确认结果</text>
+<text x="840" y="728" font-size="21" style="fill:#54677d" font-weight="400" text-anchor="start">首次指纹：写入意图，返回 None → 调下游。</text>
+<text x="840" y="756" font-size="21" style="fill:#54677d" font-weight="400" text-anchor="start">同指纹、有确认结果：复用，不调用下游写入。</text>
+<text x="840" y="784" font-size="21" style="fill:#54677d" font-weight="400" text-anchor="start">同指纹、无确认结果：DRAFT_WRITE_INDETERMINATE。</text>
+<text x="840" y="812" font-size="21" style="fill:#54677d" font-weight="400" text-anchor="start">无结果可能是失败前 / 超时后状态，必须核对。</text>
+<text x="840" y="840" font-size="21" style="fill:#54677d" font-weight="400" text-anchor="start">不会假设“超时 = 下游没写入”。</text>
+</g>
+<polyline points="416,876 416,917" fill="none" stroke="#087c80" stroke-width="2.3" marker-end="url(#arrow-teal)"/>
+<polyline points="1184,876 1184,917" fill="none" stroke="#916013" stroke-width="2.3" marker-end="url(#arrow-amber)"/>
+<g data-box="48,917,736,168">
+<rect x="48" y="917" width="736" height="168" rx="16" fill="#ecf8f6" stroke="#087c80"/>
+<rect x="66" y="937" width="5" height="29" rx="2" fill="#087c80" stroke="none"/>
+<text x="84" y="961" font-size="25" style="fill:#087c80" font-weight="600" text-anchor="start">save_agent_result：保存结果后才发送成功事件</text>
+<text x="72" y="995" font-size="21" style="fill:#54677d" font-weight="400" text-anchor="start">保存状态 / 回复 / 引用 / 草稿 / 请求结果 / 完成审计。</text>
+<text x="72" y="1023" font-size="21" style="fill:#54677d" font-weight="400" text-anchor="start">缓存 case_draft_event 保存本轮真实事件，避免历史 ID 误报。</text>
+<text x="72" y="1051" font-size="21" style="fill:#54677d" font-weight="400" text-anchor="start">普通 FAQ / 进度可保留历史草稿 ID，但不冒充本轮建草稿。</text>
+</g>
+<g data-box="816,917,736,168">
+<rect x="816" y="917" width="736" height="168" rx="16" fill="#ecf8f6" stroke="#087c80"/>
+<rect x="834" y="937" width="5" height="29" rx="2" fill="#087c80" stroke="none"/>
+<text x="852" y="961" font-size="25" style="fill:#087c80" font-weight="600" text-anchor="start">回执校验 → confirm_draft_write → 草稿结果</text>
+<text x="840" y="995" font-size="21" style="fill:#54677d" font-weight="400" text-anchor="start">校验 case_draft_id / 状态及可选市场、指纹、会话归属。</text>
+<text x="840" y="1023" font-size="21" style="fill:#54677d" font-weight="400" text-anchor="start">非法回执 / 未确定写入 → 人工核对，不发成功草稿事件。</text>
+<text x="840" y="1051" font-size="21" style="fill:#54677d" font-weight="400" text-anchor="start">下游 Spring Boot 也按指纹去重；模拟 Map 重启不保留。</text>
+</g>
+<g data-box="48,1131,1504,191">
+<rect x="48" y="1131" width="1504" height="191" rx="16" fill="#fff0f2" stroke="#ab394c"/>
+<rect x="66" y="1151" width="5" height="29" rx="2" fill="#ab394c" stroke="none"/>
+<text x="84" y="1175" font-size="25" style="fill:#ab394c" font-weight="600" text-anchor="start">多轮业务复用、消息重放和写入账本是三种不同机制</text>
+<text x="72" y="1209" font-size="21" style="fill:#54677d" font-weight="400" text-anchor="start">reuse_draft：新消息明确申请同一对象的维修，且会话已有草稿 → 回复复用已有草稿；不会重跑完整受理链。</text>
+<text x="72" y="1237" font-size="21" style="fill:#54677d" font-weight="400" text-anchor="start">消息重放：相同 client_message_id 和有效请求 → 重放保存的实际事件与结果；不会仅根据历史草稿 ID 推导新事件。</text>
+<text x="72" y="1265" font-size="21" style="fill:#54677d" font-weight="400" text-anchor="start">写入账本：跨消息按 draft_fingerprint 阻止重复外部写入；持久化模式可跨重启，内存模式只在当前进程内有效。</text>
+<text x="72" y="1293" font-size="21" style="fill:#54677d" font-weight="400" text-anchor="start">人工提示 ≠ 自动接入坐席；未知写入结果的人工核对和正式售后审批属于外部流程。</text>
+</g>
+</svg>

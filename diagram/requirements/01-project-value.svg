@@ -1,0 +1,104 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1090" viewBox="0 0 1600 1090" role="img" aria-labelledby="title desc">
+<title id="title">项目全貌：让售后咨询变成有依据、可追踪的受理流程</title><desc id="desc">减少政策误用、信息漏采、无依据承诺、越权查询与重复受理。</desc>
+<defs><marker id="arrow-blue" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 Z" fill="#2463c5"/></marker><marker id="arrow-teal" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 Z" fill="#087c80"/></marker><marker id="arrow-amber" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 Z" fill="#916013"/></marker><marker id="arrow-red" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 Z" fill="#ab394c"/></marker><marker id="arrow-gray" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 Z" fill="#54677d"/></marker></defs>
+<style>text{font-family:"PingFang SC","Noto Sans CJK SC","Microsoft YaHei",sans-serif;fill:#172c45} .code{font-family:"SFMono-Regular",Consolas,"PingFang SC",monospace}</style>
+<rect width="1600" height="1090" fill="#fff"/>
+<rect width="1600" height="12" fill="#2463c5"/>
+<text x="48" y="51" font-size="19" style="fill:#54677d" font-weight="400" text-anchor="start">GLOBALCARE  /  当前实现图集  /  01</text>
+<text x="48" y="104" font-size="37" style="fill:#172c45" font-weight="600" text-anchor="start">项目全貌：让售后咨询变成有依据、可追踪的受理流程</text>
+<rect x="48" y="129" width="1504" height="68" rx="12" fill="#eff5ff" stroke="none"/>
+<text x="72" y="172" font-size="25" style="fill:#2463c5" font-weight="600" text-anchor="start">解决的问题：减少政策误用、信息漏采、无依据承诺、越权查询与重复受理。</text>
+<text x="48" y="1043" font-size="18" style="fill:#54677d" font-weight="400" text-anchor="start">源码快照 b764afe · 2026-10-10 · 静态核对；业务与政策为模拟数据，图示不代表生产验收。</text>
+<text x="48" y="1070" font-size="16" style="fill:#54677d" font-weight="400" text-anchor="start">依据：intent.py / graph.py / service.py / policy_store.py / store.py / auth.py</text>
+<g data-box="48,228,480,156">
+<rect x="48" y="228" width="480" height="156" rx="16" fill="#eff5ff" stroke="#2463c5"/>
+<rect x="66" y="248" width="5" height="29" rx="2" fill="#2463c5" stroke="none"/>
+<text x="84" y="272" font-size="25" style="fill:#2463c5" font-weight="600" text-anchor="start">政策口径容易混用</text>
+<text x="72" y="306" font-size="21" style="fill:#54677d" font-weight="400" text-anchor="start">购买市场限定 CN / MY；有效元数据校验。</text>
+<text x="72" y="334" font-size="21" style="fill:#54677d" font-weight="400" text-anchor="start">按市场检索并展示版本、原文和引用。</text>
+</g>
+<g data-box="560,228,480,156">
+<rect x="560" y="228" width="480" height="156" rx="16" fill="#ecf8f6" stroke="#087c80"/>
+<rect x="578" y="248" width="5" height="29" rx="2" fill="#087c80" stroke="none"/>
+<text x="596" y="272" font-size="25" style="fill:#087c80" font-weight="600" text-anchor="start">故障咨询容易误触发报修</text>
+<text x="584" y="306" font-size="21" style="fill:#54677d" font-weight="400" text-anchor="start">区分政策、排查、进度、维修申请及一般引导。</text>
+<text x="584" y="334" font-size="21" style="fill:#54677d" font-weight="400" text-anchor="start">模型建议受规则校验；补充信息可延续受理。</text>
+</g>
+<g data-box="1072,228,480,156">
+<rect x="1072" y="228" width="480" height="156" rx="16" fill="#eff5ff" stroke="#2463c5"/>
+<rect x="1090" y="248" width="5" height="29" rx="2" fill="#2463c5" stroke="none"/>
+<text x="1108" y="272" font-size="25" style="fill:#2463c5" font-weight="600" text-anchor="start">受理材料缺失、上下文错用</text>
+<text x="1096" y="306" font-size="21" style="fill:#54677d" font-weight="400" text-anchor="start">缺市场或订单 / SN 时明确追问。</text>
+<text x="1096" y="334" font-size="21" style="fill:#54677d" font-weight="400" text-anchor="start">换设备清理关联；仅符合条件时复用上下文。</text>
+</g>
+<g data-box="48,413,480,156">
+<rect x="48" y="413" width="480" height="156" rx="16" fill="#ecf8f6" stroke="#087c80"/>
+<rect x="66" y="433" width="5" height="29" rx="2" fill="#087c80" stroke="none"/>
+<text x="84" y="457" font-size="25" style="fill:#087c80" font-weight="600" text-anchor="start">回答缺少业务事实依据</text>
+<text x="72" y="491" font-size="21" style="fill:#54677d" font-weight="400" text-anchor="start">按标识查询订单、设备、既有维修记录。</text>
+<text x="72" y="519" font-size="21" style="fill:#54677d" font-weight="400" text-anchor="start">校验必需字段、归属、标识及市场一致性。</text>
+</g>
+<g data-box="560,413,480,156">
+<rect x="560" y="413" width="480" height="156" rx="16" fill="#fff7e8" stroke="#916013"/>
+<rect x="578" y="433" width="5" height="29" rx="2" fill="#916013" stroke="none"/>
+<text x="596" y="457" font-size="25" style="fill:#916013" font-weight="600" text-anchor="start">重发消息造成重复执行 / 写入</text>
+<text x="584" y="491" font-size="21" style="fill:#54677d" font-weight="400" text-anchor="start">同会话串行；消息 ID 绑定请求指纹。</text>
+<text x="584" y="519" font-size="21" style="fill:#54677d" font-weight="400" text-anchor="start">草稿指纹 + 写入账本 + 下游幂等。</text>
+</g>
+<g data-box="1072,413,480,156">
+<rect x="1072" y="413" width="480" height="156" rx="16" fill="#eff5ff" stroke="#2463c5"/>
+<rect x="1090" y="433" width="5" height="29" rx="2" fill="#2463c5" stroke="none"/>
+<text x="1108" y="457" font-size="25" style="fill:#2463c5" font-weight="600" text-anchor="start">处理过程难以追溯</text>
+<text x="1096" y="491" font-size="21" style="fill:#54677d" font-weight="400" text-anchor="start">SSE 展示节点状态、证据、工具及结果。</text>
+<text x="1096" y="519" font-size="21" style="fill:#54677d" font-weight="400" text-anchor="start">持久化模式保存会话、消息、草稿和审计。</text>
+</g>
+<text x="48" y="632" font-size="26" style="fill:#172c45" font-weight="600" text-anchor="start">核心闭环：先分流，再取证，最后才允许保存草稿</text>
+<g data-box="48,668,270,128">
+<rect x="48" y="668" width="270" height="128" rx="16" fill="#eff5ff" stroke="#2463c5"/>
+<rect x="66" y="688" width="5" height="29" rx="2" fill="#2463c5" stroke="none"/>
+<text x="84" y="712" font-size="25" style="fill:#2463c5" font-weight="600" text-anchor="start">用户诉求</text>
+<text x="72" y="746" font-size="21" style="fill:#54677d" font-weight="400" text-anchor="start">网页文字聊天</text>
+</g>
+<polyline points="318,732 349,732" fill="none" stroke="#2463c5" stroke-width="2.3" marker-end="url(#arrow-blue)"/>
+<g data-box="352,668,270,128">
+<rect x="352" y="668" width="270" height="128" rx="16" fill="#eff5ff" stroke="#2463c5"/>
+<rect x="370" y="688" width="5" height="29" rx="2" fill="#2463c5" stroke="none"/>
+<text x="388" y="712" font-size="25" style="fill:#2463c5" font-weight="600" text-anchor="start">意图 / 信息</text>
+<text x="376" y="746" font-size="21" style="fill:#54677d" font-weight="400" text-anchor="start">多轮收集</text>
+</g>
+<polyline points="622,732 653,732" fill="none" stroke="#2463c5" stroke-width="2.3" marker-end="url(#arrow-blue)"/>
+<g data-box="656,668,270,128">
+<rect x="656" y="668" width="270" height="128" rx="16" fill="#eff5ff" stroke="#2463c5"/>
+<rect x="674" y="688" width="5" height="29" rx="2" fill="#2463c5" stroke="none"/>
+<text x="692" y="712" font-size="25" style="fill:#2463c5" font-weight="600" text-anchor="start">政策 / 事实</text>
+<text x="680" y="746" font-size="21" style="fill:#54677d" font-weight="400" text-anchor="start">RAG + 只读查询</text>
+</g>
+<polyline points="926,732 957,732" fill="none" stroke="#2463c5" stroke-width="2.3" marker-end="url(#arrow-blue)"/>
+<g data-box="960,668,270,128">
+<rect x="960" y="668" width="270" height="128" rx="16" fill="#eff5ff" stroke="#2463c5"/>
+<rect x="978" y="688" width="5" height="29" rx="2" fill="#2463c5" stroke="none"/>
+<text x="996" y="712" font-size="25" style="fill:#2463c5" font-weight="600" text-anchor="start">校验 / 写入</text>
+<text x="984" y="746" font-size="21" style="fill:#54677d" font-weight="400" text-anchor="start">应用节点控制</text>
+</g>
+<polyline points="1230,732 1261,732" fill="none" stroke="#2463c5" stroke-width="2.3" marker-end="url(#arrow-blue)"/>
+<g data-box="1264,668,270,128">
+<rect x="1264" y="668" width="270" height="128" rx="16" fill="#ecf8f6" stroke="#087c80"/>
+<rect x="1282" y="688" width="5" height="29" rx="2" fill="#087c80" stroke="none"/>
+<text x="1300" y="712" font-size="25" style="fill:#087c80" font-weight="600" text-anchor="start">Case Draft</text>
+<text x="1288" y="746" font-size="21" style="fill:#54677d" font-weight="400" text-anchor="start">可追踪的受理草稿</text>
+</g>
+<g data-box="48,838,736,155">
+<rect x="48" y="838" width="736" height="155" rx="16" fill="#ecf8f6" stroke="#087c80"/>
+<rect x="66" y="858" width="5" height="29" rx="2" fill="#087c80" stroke="none"/>
+<text x="84" y="882" font-size="25" style="fill:#087c80" font-weight="600" text-anchor="start">客户能得到的结果</text>
+<text x="72" y="916" font-size="21" style="fill:#54677d" font-weight="400" text-anchor="start">有来源的政策说明 / 安全排查建议 / 当前维修记录。</text>
+<text x="72" y="944" font-size="21" style="fill:#54677d" font-weight="400" text-anchor="start">符合条件的新草稿或已有草稿复用；不足时提示人工。</text>
+</g>
+<g data-box="816,838,736,155">
+<rect x="816" y="838" width="736" height="155" rx="16" fill="#fff0f2" stroke="#ab394c"/>
+<rect x="834" y="858" width="5" height="29" rx="2" fill="#ab394c" stroke="none"/>
+<text x="852" y="882" font-size="25" style="fill:#ab394c" font-weight="600" text-anchor="start">系统的实际责任终点</text>
+<text x="840" y="916" font-size="21" style="fill:#54677d" font-weight="400" text-anchor="start">只生成受理草稿；正式 Case、维修工单、审批在范围外。</text>
+<text x="840" y="944" font-size="21" style="fill:#54677d" font-weight="400" text-anchor="start">human_required 仅提示人工；没有自动转接坐席。</text>
+</g>
+</svg>

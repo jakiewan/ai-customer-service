@@ -1,0 +1,72 @@
+[
+  {
+    "file": "01-project-value",
+    "title": "项目全貌：让售后咨询变成有依据、可追踪的受理流程",
+    "problem": "减少政策误用、信息漏采、无依据承诺、越权查询与重复受理。",
+    "width": 1600,
+    "height": 1090,
+    "sources": "intent.py / graph.py / service.py / policy_store.py / store.py / auth.py",
+    "svg_sha256": "abe0f168f5416cd7755d8a0572cb1cec772d8b0904172a64e41db53e69ee6902",
+    "png_sha256": "76b79693bdb9b093902736eff7734b806d821f4ecb64b97e69e2f935abbe1a7a"
+  },
+  {
+    "file": "02-runtime-architecture",
+    "title": "运行架构：网页、Agent、政策库与模拟业务域服务",
+    "problem": "把模型理解、证据检索和业务写入分开，建立清晰的权限边界。",
+    "width": 1600,
+    "height": 1210,
+    "sources": "main.py / service.py / graph.py / business.py / mcp_server.py / DomainController.java",
+    "svg_sha256": "ab2f425658de15c27000f9c317ac7f2fe40613c0585a21c30ed5095ebd721b40",
+    "png_sha256": "edc3f1ab7ea37cf09ea0bdceeae363e93438a55766ddd8434177ada51399f881"
+  },
+  {
+    "file": "03-intent-routing",
+    "title": "意图分流：每类问题实际经过哪些 LangGraph 节点",
+    "problem": "避免把咨询直接变成报修，也避免用错误设备上下文查询或重复建草稿。",
+    "width": 1600,
+    "height": 1480,
+    "sources": "graph.py: _missing_fields / classify_node / after_classify / after_collect / after_policy / after_query",
+    "svg_sha256": "0e530cd96117c7c79ae51b4a4a8d700d0a892cff1d61dc6c324cead72243f6e8",
+    "png_sha256": "ad66efdf501381cb16a34e92ccc0947c9552c042c4e945d4c0ce9d954d60b2be"
+  },
+  {
+    "file": "04-request-sequence",
+    "title": "一次新维修受理的时序：取证、写入、持久化、SSE",
+    "problem": "保证先核验证据和写入结果，再向客户宣布草稿已保存。",
+    "width": 1600,
+    "height": 1700,
+    "sources": "main.py / service.py / graph.py / store.py / postgres_store.py / mcp_server.py / business.py",
+    "svg_sha256": "f2e78a7214f46e6e44f17e24881b9eef8ae8ed176bda0a653d49396547b40d4e",
+    "png_sha256": "1f2242e4de88127c240bd9db1601931987754adb30f4c5a12f4d36e8b7ae43fb"
+  },
+  {
+    "file": "05-policy-and-data-flow",
+    "title": "政策与数据流：从 Markdown 到证据、答复和草稿",
+    "problem": "让每次政策答复有市场和版本依据，让维修受理同时依赖政策与业务事实。",
+    "width": 1600,
+    "height": 1260,
+    "sources": "policy_store.py / state.py / graph.py / schemas.py / service.py / migrations/001–003",
+    "svg_sha256": "59e183e0b204424d2a3f55ad549bd23b45f64bda8c6e9148c38e727aa78f763b",
+    "png_sha256": "ef51146eedcf4d80659d104b2a6744fc116bca108d8a98c5fe1e3e209e12f927"
+  },
+  {
+    "file": "06-security-and-idempotency",
+    "title": "安全与幂等：会话身份、重复消息和未知写入结果",
+    "problem": "阻止越权查单、重复跑图、重复写入，以及超时后盲目再次受理。",
+    "width": 1600,
+    "height": 1420,
+    "sources": "auth.py / permissions.py / service.py / store.py / postgres_store.py / graph.py / business.py",
+    "svg_sha256": "cf077532df38bc098126a09739e91d2e6fe8fc0f674a0b767d5caf573c0040b1",
+    "png_sha256": "d111bfd2fc1b766864fa2b71e01fea6cad72e2f3a09b76442632df0e033a65f8"
+  },
+  {
+    "file": "07-state-and-runtime-modes",
+    "title": "状态与运行模式：一次回复结束，不等于售后业务结束",
+    "problem": "区分节点阶段、会话结果和正式工单，防止把系统提示误读为业务承诺。",
+    "width": 1600,
+    "height": 1260,
+    "sources": "constants.py / graph.py / service.py / config.py / checkpointer.py / main.py",
+    "svg_sha256": "27e016eb26412924152d055fed806ee42d29bd14e8ad16bf53320bd05cef4cce",
+    "png_sha256": "ceeeed2ed100f588069e7d43044ba980c924ede5bf54137372e62c30b39bf84e"
+  }
+]

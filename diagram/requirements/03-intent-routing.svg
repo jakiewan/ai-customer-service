@@ -1,0 +1,92 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1480" viewBox="0 0 1600 1480" role="img" aria-labelledby="title desc">
+<title id="title">意图分流：每类问题实际经过哪些 LangGraph 节点</title><desc id="desc">避免把咨询直接变成报修，也避免用错误设备上下文查询或重复建草稿。</desc>
+<defs><marker id="arrow-blue" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 Z" fill="#2463c5"/></marker><marker id="arrow-teal" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 Z" fill="#087c80"/></marker><marker id="arrow-amber" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 Z" fill="#916013"/></marker><marker id="arrow-red" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 Z" fill="#ab394c"/></marker><marker id="arrow-gray" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 Z" fill="#54677d"/></marker></defs>
+<style>text{font-family:"PingFang SC","Noto Sans CJK SC","Microsoft YaHei",sans-serif;fill:#172c45} .code{font-family:"SFMono-Regular",Consolas,"PingFang SC",monospace}</style>
+<rect width="1600" height="1480" fill="#fff"/>
+<rect width="1600" height="12" fill="#2463c5"/>
+<text x="48" y="51" font-size="19" style="fill:#54677d" font-weight="400" text-anchor="start">GLOBALCARE  /  当前实现图集  /  03</text>
+<text x="48" y="104" font-size="37" style="fill:#172c45" font-weight="600" text-anchor="start">意图分流：每类问题实际经过哪些 LangGraph 节点</text>
+<rect x="48" y="129" width="1504" height="68" rx="12" fill="#eff5ff" stroke="none"/>
+<text x="72" y="172" font-size="25" style="fill:#2463c5" font-weight="600" text-anchor="start">解决的问题：避免把咨询直接变成报修，也避免用错误设备上下文查询或重复建草稿。</text>
+<text x="48" y="1433" font-size="18" style="fill:#54677d" font-weight="400" text-anchor="start">源码快照 b764afe · 2026-10-10 · 静态核对；业务与政策为模拟数据，图示不代表生产验收。</text>
+<text x="48" y="1460" font-size="16" style="fill:#54677d" font-weight="400" text-anchor="start">依据：graph.py: _missing_fields / classify_node / after_classify / after_collect / after_policy / after_query</text>
+<g data-box="48,226,1504,178">
+<rect x="48" y="226" width="1504" height="178" rx="16" fill="#eff5ff" stroke="#2463c5"/>
+<rect x="66" y="246" width="5" height="29" rx="2" fill="#2463c5" stroke="none"/>
+<text x="84" y="270" font-size="25" style="fill:#2463c5" font-weight="600" text-anchor="start">入口：START → classify_intent；路由优先级与源码一致</text>
+<text x="72" y="304" font-size="21" style="fill:#54677d" font-weight="400" text-anchor="start">① 命中超范围词：优先 retrieve_policy → 无证据 → 人工提示（早于一般引导和草稿复用）。</text>
+<text x="72" y="332" font-size="21" style="fill:#54677d" font-weight="400" text-anchor="start">② GENERAL：直接回复。③ CASE_REQUEST 且同一对象已有草稿：reuse_draft → 回复。</text>
+<text x="72" y="360" font-size="21" style="fill:#54677d" font-weight="400" text-anchor="start">④ 其他路径先检查缺失字段 → collect_info 追问。⑤ REPAIR_STATUS 查询业务，其余核心意图检索政策。</text>
+</g>
+<rect x="48" y="435" width="1504" height="115" rx="12" fill="#eff5ff" stroke="none"/>
+<text x="68" y="467" font-size="24" style="fill:#2463c5" font-weight="600" text-anchor="start">GENERAL</text>
+<text x="68" y="495" font-size="20" style="fill:#54677d" font-weight="400" text-anchor="start">一般引导；不取政策和事实。</text>
+<rect x="68" y="510" width="220" height="30" rx="6" fill="#fff" stroke="#2463c5"/>
+<text x="178.0" y="531" font-size="18" style="fill:#2463c5" font-weight="400" text-anchor="middle" class="code">render_response</text>
+<rect x="48" y="571" width="1504" height="115" rx="12" fill="#fff7e8" stroke="none"/>
+<text x="68" y="603" font-size="24" style="fill:#916013" font-weight="600" text-anchor="start">缺失字段</text>
+<text x="68" y="631" font-size="20" style="fill:#54677d" font-weight="400" text-anchor="start">FAQ / 排查需市场；报修需市场 + 订单或 SN；进度需订单或 SN。</text>
+<rect x="68" y="646" width="220" height="30" rx="6" fill="#fff" stroke="#916013"/>
+<text x="178.0" y="667" font-size="18" style="fill:#916013" font-weight="400" text-anchor="middle" class="code">collect_info</text>
+<polyline points="288,661 311,661" fill="none" stroke="#916013" stroke-width="2.3" marker-end="url(#arrow-amber)"/>
+<rect x="314" y="646" width="220" height="30" rx="6" fill="#fff" stroke="#916013"/>
+<text x="424.0" y="667" font-size="18" style="fill:#916013" font-weight="400" text-anchor="middle" class="code">render_response</text>
+<rect x="48" y="707" width="1504" height="115" rx="12" fill="#ecf8f6" stroke="none"/>
+<text x="68" y="739" font-size="24" style="fill:#087c80" font-weight="600" text-anchor="start">FAQ / TROUBLESHOOTING</text>
+<text x="68" y="767" font-size="20" style="fill:#54677d" font-weight="400" text-anchor="start">有市场且取得政策证据；返回政策原文与排查建议，不保存草稿。</text>
+<rect x="68" y="782" width="220" height="30" rx="6" fill="#fff" stroke="#087c80"/>
+<text x="178.0" y="803" font-size="18" style="fill:#087c80" font-weight="400" text-anchor="middle" class="code">retrieve_policy</text>
+<polyline points="288,797 311,797" fill="none" stroke="#087c80" stroke-width="2.3" marker-end="url(#arrow-teal)"/>
+<rect x="314" y="782" width="220" height="30" rx="6" fill="#fff" stroke="#087c80"/>
+<text x="424.0" y="803" font-size="18" style="fill:#087c80" font-weight="400" text-anchor="middle" class="code">render_response</text>
+<rect x="48" y="843" width="1504" height="115" rx="12" fill="#eff5ff" stroke="none"/>
+<text x="68" y="875" font-size="24" style="fill:#2463c5" font-weight="600" text-anchor="start">REPAIR_STATUS</text>
+<text x="68" y="903" font-size="20" style="fill:#54677d" font-weight="400" text-anchor="start">按订单 / SN 读既有维修记录；无需政策检索，不创建草稿。</text>
+<rect x="68" y="918" width="220" height="30" rx="6" fill="#fff" stroke="#2463c5"/>
+<text x="178.0" y="939" font-size="18" style="fill:#2463c5" font-weight="400" text-anchor="middle" class="code">query_business</text>
+<polyline points="288,933 311,933" fill="none" stroke="#2463c5" stroke-width="2.3" marker-end="url(#arrow-blue)"/>
+<rect x="314" y="918" width="220" height="30" rx="6" fill="#fff" stroke="#2463c5"/>
+<text x="424.0" y="939" font-size="18" style="fill:#2463c5" font-weight="400" text-anchor="middle" class="code">render_response</text>
+<rect x="48" y="979" width="1504" height="115" rx="12" fill="#ecf8f6" stroke="none"/>
+<text x="68" y="1011" font-size="24" style="fill:#087c80" font-weight="600" text-anchor="start">CASE_REQUEST · 新草稿</text>
+<text x="68" y="1039" font-size="20" style="fill:#54677d" font-weight="400" text-anchor="start">字段齐全；政策 → 事实 → 草稿 → 校验 → 应用写入；失败直接回复。</text>
+<rect x="68" y="1054" width="220" height="30" rx="6" fill="#fff" stroke="#087c80"/>
+<text x="178.0" y="1075" font-size="18" style="fill:#087c80" font-weight="400" text-anchor="middle" class="code">retrieve_policy</text>
+<polyline points="288,1069 311,1069" fill="none" stroke="#087c80" stroke-width="2.3" marker-end="url(#arrow-teal)"/>
+<rect x="314" y="1054" width="220" height="30" rx="6" fill="#fff" stroke="#087c80"/>
+<text x="424.0" y="1075" font-size="18" style="fill:#087c80" font-weight="400" text-anchor="middle" class="code">query_business</text>
+<polyline points="534,1069 557,1069" fill="none" stroke="#087c80" stroke-width="2.3" marker-end="url(#arrow-teal)"/>
+<rect x="560" y="1054" width="220" height="30" rx="6" fill="#fff" stroke="#087c80"/>
+<text x="670.0" y="1075" font-size="18" style="fill:#087c80" font-weight="400" text-anchor="middle" class="code">build_case_draft</text>
+<polyline points="780,1069 803,1069" fill="none" stroke="#087c80" stroke-width="2.3" marker-end="url(#arrow-teal)"/>
+<rect x="806" y="1054" width="220" height="30" rx="6" fill="#fff" stroke="#087c80"/>
+<text x="916.0" y="1075" font-size="18" style="fill:#087c80" font-weight="400" text-anchor="middle" class="code">validate_draft</text>
+<polyline points="1026,1069 1049,1069" fill="none" stroke="#087c80" stroke-width="2.3" marker-end="url(#arrow-teal)"/>
+<rect x="1052" y="1054" width="220" height="30" rx="6" fill="#fff" stroke="#087c80"/>
+<text x="1162.0" y="1075" font-size="18" style="fill:#087c80" font-weight="400" text-anchor="middle" class="code">create_case_draft</text>
+<polyline points="1272,1069 1295,1069" fill="none" stroke="#087c80" stroke-width="2.3" marker-end="url(#arrow-teal)"/>
+<rect x="1298" y="1054" width="220" height="30" rx="6" fill="#fff" stroke="#087c80"/>
+<text x="1408.0" y="1075" font-size="18" style="fill:#087c80" font-weight="400" text-anchor="middle" class="code">render_response</text>
+<rect x="48" y="1115" width="1504" height="115" rx="12" fill="#fff7e8" stroke="none"/>
+<text x="68" y="1147" font-size="24" style="fill:#916013" font-weight="600" text-anchor="start">CASE_REQUEST · 复用</text>
+<text x="68" y="1175" font-size="20" style="fill:#54677d" font-weight="400" text-anchor="start">同一对象已有 case_draft_id；新设备或新对象会清理旧草稿关联。</text>
+<rect x="68" y="1190" width="220" height="30" rx="6" fill="#fff" stroke="#916013"/>
+<text x="178.0" y="1211" font-size="18" style="fill:#916013" font-weight="400" text-anchor="middle" class="code">reuse_draft</text>
+<polyline points="288,1205 311,1205" fill="none" stroke="#916013" stroke-width="2.3" marker-end="url(#arrow-amber)"/>
+<rect x="314" y="1190" width="220" height="30" rx="6" fill="#fff" stroke="#916013"/>
+<text x="424.0" y="1211" font-size="18" style="fill:#916013" font-weight="400" text-anchor="middle" class="code">render_response</text>
+<g data-box="48,1272,736,122">
+<rect x="48" y="1272" width="736" height="122" rx="16" fill="#eff5ff" stroke="#2463c5"/>
+<rect x="66" y="1292" width="5" height="29" rx="2" fill="#2463c5" stroke="none"/>
+<text x="84" y="1316" font-size="25" style="fill:#2463c5" font-weight="600" text-anchor="start">追问是跨轮继续，不是本轮内部等待</text>
+<text x="72" y="1350" font-size="21" style="fill:#54677d" font-weight="400" text-anchor="start">缺失字段保留到下轮；补市场 / 标识时可延续维修申请。</text>
+<text x="72" y="1378" font-size="21" style="fill:#54677d" font-weight="400" text-anchor="start">collect_info 若已无缺失，按意图进入政策或业务节点。</text>
+</g>
+<g data-box="816,1272,736,122">
+<rect x="816" y="1272" width="736" height="122" rx="16" fill="#fff0f2" stroke="#ab394c"/>
+<rect x="834" y="1292" width="5" height="29" rx="2" fill="#ab394c" stroke="none"/>
+<text x="852" y="1316" font-size="25" style="fill:#ab394c" font-weight="600" text-anchor="start">每条回复路径都经 render_response → END</text>
+<text x="840" y="1350" font-size="21" style="fill:#54677d" font-weight="400" text-anchor="start">无政策 / 事实冲突 / 草稿无效 / 写入未确定：提示人工。</text>
+<text x="840" y="1378" font-size="21" style="fill:#54677d" font-weight="400" text-anchor="start">规则限制模型擅自发起报修；取消申请不等于取消已存草稿。</text>
+</g>
+</svg>
