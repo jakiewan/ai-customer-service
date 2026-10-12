@@ -1,0 +1,102 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1700" viewBox="0 0 1600 1700" role="img" aria-labelledby="title desc">
+<title id="title">一次新维修受理的时序：取证、写入、持久化、SSE</title><desc id="desc">保证先核验证据和写入结果，再向客户宣布草稿已保存。</desc>
+<defs><marker id="arrow-blue" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 Z" fill="#2463c5"/></marker><marker id="arrow-teal" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 Z" fill="#087c80"/></marker><marker id="arrow-amber" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 Z" fill="#916013"/></marker><marker id="arrow-red" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 Z" fill="#ab394c"/></marker><marker id="arrow-gray" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 Z" fill="#54677d"/></marker></defs>
+<style>text{font-family:"PingFang SC","Noto Sans CJK SC","Microsoft YaHei",sans-serif;fill:#172c45} .code{font-family:"SFMono-Regular",Consolas,"PingFang SC",monospace}</style>
+<rect width="1600" height="1700" fill="#fff"/>
+<rect width="1600" height="12" fill="#2463c5"/>
+<text x="48" y="51" font-size="19" style="fill:#54677d" font-weight="400" text-anchor="start">GLOBALCARE  /  当前实现图集  /  04</text>
+<text x="48" y="104" font-size="37" style="fill:#172c45" font-weight="600" text-anchor="start">一次新维修受理的时序：取证、写入、持久化、SSE</text>
+<rect x="48" y="129" width="1504" height="68" rx="12" fill="#eff5ff" stroke="none"/>
+<text x="72" y="172" font-size="25" style="fill:#2463c5" font-weight="600" text-anchor="start">解决的问题：保证先核验证据和写入结果，再向客户宣布草稿已保存。</text>
+<text x="48" y="1653" font-size="18" style="fill:#54677d" font-weight="400" text-anchor="start">源码快照 b764afe · 2026-10-10 · 静态核对；业务与政策为模拟数据，图示不代表生产验收。</text>
+<text x="48" y="1680" font-size="16" style="fill:#54677d" font-weight="400" text-anchor="start">依据：main.py / service.py / graph.py / store.py / postgres_store.py / mcp_server.py / business.py</text>
+<text x="48" y="230" font-size="21" style="fill:#54677d" font-weight="400" text-anchor="start">场景：已创建会话，维修申请信息齐全；查询走 MCP、写入走 HTTP；省略模型分类内部调用。</text>
+<rect x="27" y="250" width="156" height="52" rx="10" fill="#eff5ff" stroke="#2463c5"/>
+<text x="105" y="283" font-size="23" style="fill:#2463c5" font-weight="600" text-anchor="middle">Vue 网页</text>
+<line x1="105" y1="302" x2="105" y2="1457" stroke="#bccbda" stroke-dasharray="6 6"/>
+<rect x="212" y="250" width="156" height="52" rx="10" fill="#eff5ff" stroke="#2463c5"/>
+<text x="290" y="283" font-size="23" style="fill:#2463c5" font-weight="600" text-anchor="middle">FastAPI</text>
+<line x1="290" y1="302" x2="290" y2="1457" stroke="#bccbda" stroke-dasharray="6 6"/>
+<rect x="397" y="250" width="156" height="52" rx="10" fill="#eff5ff" stroke="#2463c5"/>
+<text x="475" y="283" font-size="23" style="fill:#2463c5" font-weight="600" text-anchor="middle">会话服务</text>
+<line x1="475" y1="302" x2="475" y2="1457" stroke="#bccbda" stroke-dasharray="6 6"/>
+<rect x="582" y="250" width="156" height="52" rx="10" fill="#eff5ff" stroke="#2463c5"/>
+<text x="660" y="283" font-size="23" style="fill:#2463c5" font-weight="600" text-anchor="middle">LangGraph</text>
+<line x1="660" y1="302" x2="660" y2="1457" stroke="#bccbda" stroke-dasharray="6 6"/>
+<rect x="767" y="250" width="156" height="52" rx="10" fill="#eff5ff" stroke="#2463c5"/>
+<text x="845" y="283" font-size="23" style="fill:#2463c5" font-weight="600" text-anchor="middle">PolicyStore</text>
+<line x1="845" y1="302" x2="845" y2="1457" stroke="#bccbda" stroke-dasharray="6 6"/>
+<rect x="952" y="250" width="156" height="52" rx="10" fill="#eff5ff" stroke="#2463c5"/>
+<text x="1030" y="283" font-size="23" style="fill:#2463c5" font-weight="600" text-anchor="middle">FastMCP</text>
+<line x1="1030" y1="302" x2="1030" y2="1457" stroke="#bccbda" stroke-dasharray="6 6"/>
+<rect x="1137" y="250" width="156" height="52" rx="10" fill="#eff5ff" stroke="#2463c5"/>
+<text x="1215" y="283" font-size="23" style="fill:#2463c5" font-weight="600" text-anchor="middle">Spring Boot</text>
+<line x1="1215" y1="302" x2="1215" y2="1457" stroke="#bccbda" stroke-dasharray="6 6"/>
+<rect x="1357" y="250" width="156" height="52" rx="10" fill="#eff5ff" stroke="#2463c5"/>
+<text x="1435" y="283" font-size="23" style="fill:#2463c5" font-weight="600" text-anchor="middle">Store</text>
+<line x1="1435" y1="302" x2="1435" y2="1457" stroke="#bccbda" stroke-dasharray="6 6"/>
+<polyline points="105,343 290,343" fill="none" stroke="#2463c5" stroke-width="2.3" marker-end="url(#arrow-blue)"/>
+<text x="113" y="333" font-size="18" text-anchor="start" style="fill:#2463c5;paint-order:stroke;stroke:#fff;stroke-width:8;stroke-linejoin:round">01  POST /api/v1/conversations/{conversation_id}/messages/stream + client_message_id</text>
+<polyline points="290,387 1435,387" fill="none" stroke="#2463c5" stroke-width="2.3" marker-end="url(#arrow-blue)"/>
+<text x="862.5" y="377" font-size="18" text-anchor="middle" style="fill:#2463c5;paint-order:stroke;stroke:#fff;stroke-width:8;stroke-linejoin:round">02  认证后校验会话所有权</text>
+<polyline points="290,431 475,431" fill="none" stroke="#2463c5" stroke-width="2.3" marker-end="url(#arrow-blue)"/>
+<text x="298" y="421" font-size="18" text-anchor="start" style="fill:#2463c5;paint-order:stroke;stroke:#fff;stroke-width:8;stroke-linejoin:round">03  stream_message：开始 SSE 编排</text>
+<polyline points="475,475 1435,475" fill="none" stroke="#916013" stroke-width="2.3" marker-end="url(#arrow-amber)"/>
+<text x="955.0" y="465" font-size="18" text-anchor="middle" style="fill:#916013;paint-order:stroke;stroke:#fff;stroke-width:8;stroke-linejoin:round">04  message_lock：同会话串行执行</text>
+<polyline points="475,519 1435,519" fill="none" stroke="#916013" stroke-width="2.3" marker-end="url(#arrow-amber)"/>
+<text x="955.0" y="509" font-size="18" text-anchor="middle" style="fill:#916013;paint-order:stroke;stroke:#fff;stroke-width:8;stroke-linejoin:round">05  append_user_message：请求指纹 / 幂等检查</text>
+<polyline points="1435,563 475,563" fill="none" stroke="#54677d" stroke-width="2.3" marker-end="url(#arrow-gray)"/>
+<text x="955.0" y="553" font-size="18" text-anchor="middle" style="fill:#54677d;paint-order:stroke;stroke:#fff;stroke-width:8;stroke-linejoin:round">06  首次请求登记；重复已完成请求在此重放并结束</text>
+<polyline points="475,607 660,607" fill="none" stroke="#2463c5" stroke-width="2.3" marker-end="url(#arrow-blue)"/>
+<text x="483" y="597" font-size="18" text-anchor="start" style="fill:#2463c5;paint-order:stroke;stroke:#fff;stroke-width:8;stroke-linejoin:round">07  GraphService.stream：状态与本轮预算</text>
+<polyline points="660,651 720,651 720,669 660,669" fill="none" stroke="#2463c5" stroke-width="2.3" marker-end="url(#arrow-blue)"/>
+<text x="736" y="664" font-size="18" style="fill:#2463c5" font-weight="400" text-anchor="start">classify_intent：模型建议 + 规则 / 上下文约束</text>
+<polyline points="660,695 845,695" fill="none" stroke="#087c80" stroke-width="2.3" marker-end="url(#arrow-teal)"/>
+<text x="668" y="685" font-size="18" text-anchor="start" style="fill:#087c80;paint-order:stroke;stroke:#fff;stroke-width:8;stroke-linejoin:round">09  retrieve(query, market)；top_k=3</text>
+<polyline points="845,739 660,739" fill="none" stroke="#087c80" stroke-width="2.3" marker-end="url(#arrow-teal)"/>
+<text x="668" y="729" font-size="18" text-anchor="start" style="fill:#087c80;paint-order:stroke;stroke:#fff;stroke-width:8;stroke-linejoin:round">10  返回 PolicyEvidence：市场、版本与政策原文</text>
+<polyline points="660,783 1030,783" fill="none" stroke="#2463c5" stroke-width="2.3" marker-end="url(#arrow-blue)"/>
+<text x="668" y="773" font-size="18" text-anchor="start" style="fill:#2463c5;paint-order:stroke;stroke:#fff;stroke-width:8;stroke-linejoin:round">11  query_order 或 query_device（两者有值时都查）</text>
+<polyline points="1030,827 1215,827" fill="none" stroke="#2463c5" stroke-width="2.3" marker-end="url(#arrow-blue)"/>
+<text x="1038" y="817" font-size="18" text-anchor="start" style="fill:#2463c5;paint-order:stroke;stroke:#fff;stroke-width:8;stroke-linejoin:round">12  HTTP GET /internal/orders 或 /internal/devices</text>
+<polyline points="1215,871 1030,871" fill="none" stroke="#54677d" stroke-width="2.3" marker-end="url(#arrow-gray)"/>
+<text x="1038" y="861" font-size="18" text-anchor="start" style="fill:#54677d;paint-order:stroke;stroke:#fff;stroke-width:8;stroke-linejoin:round">13  模拟业务事实：客户 / 租户 / 市场 / 订单 / 设备</text>
+<polyline points="1030,915 660,915" fill="none" stroke="#54677d" stroke-width="2.3" marker-end="url(#arrow-gray)"/>
+<text x="668" y="905" font-size="18" text-anchor="start" style="fill:#54677d;paint-order:stroke;stroke:#fff;stroke-width:8;stroke-linejoin:round">14  工具结果返回；图内校验归属和一致性</text>
+<polyline points="660,959 720,959 720,977 660,977" fill="none" stroke="#087c80" stroke-width="2.3" marker-end="url(#arrow-teal)"/>
+<text x="736" y="972" font-size="18" style="fill:#087c80" font-weight="400" text-anchor="start">build_case_draft → validate_draft</text>
+<polyline points="660,1003 1435,1003" fill="none" stroke="#916013" stroke-width="2.3" marker-end="url(#arrow-amber)"/>
+<text x="1047.5" y="993" font-size="18" text-anchor="middle" style="fill:#916013;paint-order:stroke;stroke:#fff;stroke-width:8;stroke-linejoin:round">16  reserve_draft_write：持久化写入意图</text>
+<polyline points="1435,1047 660,1047" fill="none" stroke="#54677d" stroke-width="2.3" marker-end="url(#arrow-gray)"/>
+<text x="1047.5" y="1037" font-size="18" text-anchor="middle" style="fill:#54677d;paint-order:stroke;stroke:#fff;stroke-width:8;stroke-linejoin:round">17  首次预留返回 None；已有结果直接复用</text>
+<polyline points="660,1091 1215,1091" fill="none" stroke="#916013" stroke-width="2.3" marker-end="url(#arrow-amber)"/>
+<text x="937.5" y="1081" font-size="18" text-anchor="middle" style="fill:#916013;paint-order:stroke;stroke:#fff;stroke-width:8;stroke-linejoin:round">18  HTTP POST /internal/case-drafts（应用节点）</text>
+<polyline points="1215,1135 660,1135" fill="none" stroke="#54677d" stroke-width="2.3" marker-end="url(#arrow-gray)"/>
+<text x="937.5" y="1125" font-size="18" text-anchor="middle" style="fill:#54677d;paint-order:stroke;stroke:#fff;stroke-width:8;stroke-linejoin:round">19  case_draft_id + 状态 + 指纹等回执</text>
+<polyline points="660,1179 1435,1179" fill="none" stroke="#916013" stroke-width="2.3" marker-end="url(#arrow-amber)"/>
+<text x="1047.5" y="1169" font-size="18" text-anchor="middle" style="fill:#916013;paint-order:stroke;stroke:#fff;stroke-width:8;stroke-linejoin:round">20  校验回执 → confirm_draft_write</text>
+<polyline points="660,1223 475,1223" fill="none" stroke="#54677d" stroke-width="2.3" marker-end="url(#arrow-gray)"/>
+<text x="483" y="1213" font-size="18" text-anchor="start" style="fill:#54677d;paint-order:stroke;stroke:#fff;stroke-width:8;stroke-linejoin:round">21  节点更新；render_response → 最终状态</text>
+<polyline points="475,1267 1435,1267" fill="none" stroke="#087c80" stroke-width="2.3" marker-end="url(#arrow-teal)"/>
+<text x="955.0" y="1257" font-size="18" text-anchor="middle" style="fill:#087c80;paint-order:stroke;stroke:#fff;stroke-width:8;stroke-linejoin:round">22  save_agent_result：会话 / 消息 / 草稿 / 结果 / 完成审计</text>
+<polyline points="1435,1311 475,1311" fill="none" stroke="#54677d" stroke-width="2.3" marker-end="url(#arrow-gray)"/>
+<text x="955.0" y="1301" font-size="18" text-anchor="middle" style="fill:#54677d;paint-order:stroke;stroke:#fff;stroke-width:8;stroke-linejoin:round">23  保存完成；Postgres 模式在同一事务提交</text>
+<polyline points="475,1355 290,1355" fill="none" stroke="#087c80" stroke-width="2.3" marker-end="url(#arrow-teal)"/>
+<text x="298" y="1345" font-size="18" text-anchor="start" style="fill:#087c80;paint-order:stroke;stroke:#fff;stroke-width:8;stroke-linejoin:round">24  输出 case_draft_created → token → done</text>
+<polyline points="290,1399 105,1399" fill="none" stroke="#087c80" stroke-width="2.3" marker-end="url(#arrow-teal)"/>
+<text x="113" y="1389" font-size="18" text-anchor="start" style="fill:#087c80;paint-order:stroke;stroke:#fff;stroke-width:8;stroke-linejoin:round">25  text/event-stream：客户端展示已保存草稿</text>
+<g data-box="48,1480,736,127">
+<rect x="48" y="1480" width="736" height="127" rx="16" fill="#eff5ff" stroke="#2463c5"/>
+<rect x="66" y="1500" width="5" height="29" rx="2" fill="#2463c5" stroke="none"/>
+<text x="84" y="1524" font-size="25" style="fill:#2463c5" font-weight="600" text-anchor="start">执行中事件与成功事件时机</text>
+<text x="72" y="1558" font-size="21" style="fill:#54677d" font-weight="400" text-anchor="start">status / tool_call 随节点更新发出；本次 CASE_REQUEST 的</text>
+<text x="72" y="1586" font-size="21" style="fill:#54677d" font-weight="400" text-anchor="start">policy_evidence 在业务核验成功后发出。成功草稿事件在结果保存后发。</text>
+</g>
+<g data-box="816,1480,736,127">
+<rect x="816" y="1480" width="736" height="127" rx="16" fill="#fff0f2" stroke="#ab394c"/>
+<rect x="834" y="1500" width="5" height="29" rx="2" fill="#ab394c" stroke="none"/>
+<text x="852" y="1524" font-size="25" style="fill:#ab394c" font-weight="600" text-anchor="start">异常支路与重放</text>
+<text x="840" y="1558" font-size="21" style="fill:#54677d" font-weight="400" text-anchor="start">账本未确认、回执错误：human_required；系统异常：error + done。</text>
+<text x="840" y="1586" font-size="21" style="fill:#54677d" font-weight="400" text-anchor="start">token 是完整回复按 28 字符切片输出，不是模型实时生成 Token。</text>
+</g>
+</svg>

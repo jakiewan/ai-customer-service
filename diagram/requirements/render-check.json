@@ -1,0 +1,44 @@
+[
+  {
+    "file": "01-project-value",
+    "issues": [],
+    "width": 1600,
+    "height": 1090
+  },
+  {
+    "file": "02-runtime-architecture",
+    "issues": [],
+    "width": 1600,
+    "height": 1210
+  },
+  {
+    "file": "03-intent-routing",
+    "issues": [],
+    "width": 1600,
+    "height": 1480
+  },
+  {
+    "file": "04-request-sequence",
+    "issues": [],
+    "width": 1600,
+    "height": 1700
+  },
+  {
+    "file": "05-policy-and-data-flow",
+    "issues": [],
+    "width": 1600,
+    "height": 1260
+  },
+  {
+    "file": "06-security-and-idempotency",
+    "issues": [],
+    "width": 1600,
+    "height": 1420
+  },
+  {
+    "file": "07-state-and-runtime-modes",
+    "issues": [],
+    "width": 1600,
+    "height": 1260
+  }
+]

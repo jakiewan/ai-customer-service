@@ -1,0 +1,125 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1260" viewBox="0 0 1600 1260" role="img" aria-labelledby="title desc">
+<title id="title">政策与数据流：从 Markdown 到证据、答复和草稿</title><desc id="desc">让每次政策答复有市场和版本依据，让维修受理同时依赖政策与业务事实。</desc>
+<defs><marker id="arrow-blue" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 Z" fill="#2463c5"/></marker><marker id="arrow-teal" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 Z" fill="#087c80"/></marker><marker id="arrow-amber" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 Z" fill="#916013"/></marker><marker id="arrow-red" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 Z" fill="#ab394c"/></marker><marker id="arrow-gray" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 Z" fill="#54677d"/></marker></defs>
+<style>text{font-family:"PingFang SC","Noto Sans CJK SC","Microsoft YaHei",sans-serif;fill:#172c45} .code{font-family:"SFMono-Regular",Consolas,"PingFang SC",monospace}</style>
+<rect width="1600" height="1260" fill="#fff"/>
+<rect width="1600" height="12" fill="#2463c5"/>
+<text x="48" y="51" font-size="19" style="fill:#54677d" font-weight="400" text-anchor="start">GLOBALCARE  /  当前实现图集  /  05</text>
+<text x="48" y="104" font-size="37" style="fill:#172c45" font-weight="600" text-anchor="start">政策与数据流：从 Markdown 到证据、答复和草稿</text>
+<rect x="48" y="129" width="1504" height="68" rx="12" fill="#eff5ff" stroke="none"/>
+<text x="72" y="172" font-size="25" style="fill:#2463c5" font-weight="600" text-anchor="start">解决的问题：让每次政策答复有市场和版本依据，让维修受理同时依赖政策与业务事实。</text>
+<text x="48" y="1213" font-size="18" style="fill:#54677d" font-weight="400" text-anchor="start">源码快照 b764afe · 2026-10-10 · 静态核对；业务与政策为模拟数据，图示不代表生产验收。</text>
+<text x="48" y="1240" font-size="16" style="fill:#54677d" font-weight="400" text-anchor="start">依据：policy_store.py / state.py / graph.py / schemas.py / service.py / migrations/001–003</text>
+<text x="48" y="240" font-size="26" style="fill:#172c45" font-weight="600" text-anchor="start">A. 政策准备：短政策文档，不是 PDF / OCR / 通用长文档切块流水线</text>
+<g data-box="48,267,352,140">
+<rect x="48" y="267" width="352" height="140" rx="16" fill="#ecf8f6" stroke="#087c80"/>
+<rect x="66" y="287" width="5" height="29" rx="2" fill="#087c80" stroke="none"/>
+<text x="84" y="311" font-size="25" style="fill:#087c80" font-weight="600" text-anchor="start">政策 Markdown</text>
+<text x="72" y="345" font-size="21" style="fill:#54677d" font-weight="400" text-anchor="start">policy_cn.md / policy_my.md</text>
+<text x="72" y="373" font-size="21" style="fill:#54677d" font-weight="400" text-anchor="start">正文 + YAML frontmatter。</text>
+</g>
+<polyline points="400,337 429,337" fill="none" stroke="#087c80" stroke-width="2.3" marker-end="url(#arrow-teal)"/>
+<g data-box="432,267,352,140">
+<rect x="432" y="267" width="352" height="140" rx="16" fill="#ecf8f6" stroke="#087c80"/>
+<rect x="450" y="287" width="5" height="29" rx="2" fill="#087c80" stroke="none"/>
+<text x="468" y="311" font-size="25" style="fill:#087c80" font-weight="600" text-anchor="start">加载与校验</text>
+<text x="456" y="345" font-size="21" style="fill:#54677d" font-weight="400" text-anchor="start">Document；市场 / 版本 / 语言。</text>
+<text x="456" y="373" font-size="21" style="fill:#54677d" font-weight="400" text-anchor="start">严格环境要求已批准且非模拟。</text>
+</g>
+<polyline points="784,337 813,337" fill="none" stroke="#087c80" stroke-width="2.3" marker-end="url(#arrow-teal)"/>
+<g data-box="816,267,352,140">
+<rect x="816" y="267" width="352" height="140" rx="16" fill="#ecf8f6" stroke="#087c80"/>
+<rect x="834" y="287" width="5" height="29" rx="2" fill="#087c80" stroke="none"/>
+<text x="852" y="311" font-size="25" style="fill:#087c80" font-weight="600" text-anchor="start">Embedding</text>
+<text x="840" y="345" font-size="21" style="fill:#54677d" font-weight="400" text-anchor="start">开发默认 HashEmbeddings。</text>
+<text x="840" y="373" font-size="21" style="fill:#54677d" font-weight="400" text-anchor="start">可选 HuggingFace 语义向量。</text>
+</g>
+<polyline points="1168,337 1197,337" fill="none" stroke="#087c80" stroke-width="2.3" marker-end="url(#arrow-teal)"/>
+<g data-box="1200,267,352,140">
+<rect x="1200" y="267" width="352" height="140" rx="16" fill="#ecf8f6" stroke="#087c80"/>
+<rect x="1218" y="287" width="5" height="29" rx="2" fill="#087c80" stroke="none"/>
+<text x="1236" y="311" font-size="25" style="fill:#087c80" font-weight="600" text-anchor="start">向量库</text>
+<text x="1224" y="345" font-size="21" style="fill:#54677d" font-weight="400" text-anchor="start">InMemoryVectorStore。</text>
+<text x="1224" y="373" font-size="21" style="fill:#54677d" font-weight="400" text-anchor="start">可选 PGVector；seed 入库。</text>
+</g>
+<text x="48" y="456" font-size="26" style="fill:#172c45" font-weight="600" text-anchor="start">B. 每轮检索：query + market → 门禁 → 检索 → 证据</text>
+<g data-box="48,485,352,200">
+<rect x="48" y="485" width="352" height="200" rx="16" fill="#eff5ff" stroke="#2463c5"/>
+<rect x="66" y="505" width="5" height="29" rx="2" fill="#2463c5" stroke="none"/>
+<text x="84" y="529" font-size="25" style="fill:#2463c5" font-weight="600" text-anchor="start">输入与范围门禁</text>
+<text x="72" y="563" font-size="21" style="fill:#54677d" font-weight="400" text-anchor="start">使用问题摘要 / 当前消息。</text>
+<text x="72" y="591" font-size="21" style="fill:#54677d" font-weight="400" text-anchor="start">market 必须存在。</text>
+<text x="72" y="619" font-size="21" style="fill:#54677d" font-weight="400" text-anchor="start">超范围产品或高风险词：空证据。</text>
+<text x="72" y="647" font-size="21" style="fill:#54677d" font-weight="400" text-anchor="start">未命中支持主题 → 空证据。</text>
+</g>
+<g data-box="432,485,352,200">
+<rect x="432" y="485" width="352" height="200" rx="16" fill="#ecf8f6" stroke="#087c80"/>
+<rect x="450" y="505" width="5" height="29" rx="2" fill="#087c80" stroke="none"/>
+<text x="468" y="529" font-size="25" style="fill:#087c80" font-weight="600" text-anchor="start">按购买市场检索</text>
+<text x="456" y="563" font-size="21" style="fill:#54677d" font-weight="400" text-anchor="start">PGVector：filter={market}。</text>
+<text x="456" y="591" font-size="21" style="fill:#54677d" font-weight="400" text-anchor="start">候选 k=max(top_k×3, top_k)。</text>
+<text x="456" y="619" font-size="21" style="fill:#54677d" font-weight="400" text-anchor="start">内存：向量 + 主题 / 重叠兜底。</text>
+<text x="456" y="647" font-size="21" style="fill:#54677d" font-weight="400" text-anchor="start">默认 top_k=3；返回政策原文。</text>
+</g>
+<g data-box="816,485,352,200">
+<rect x="816" y="485" width="352" height="200" rx="16" fill="#ecf8f6" stroke="#087c80"/>
+<rect x="834" y="505" width="5" height="29" rx="2" fill="#087c80" stroke="none"/>
+<text x="852" y="529" font-size="25" style="fill:#087c80" font-weight="600" text-anchor="start">再次校验并形成证据</text>
+<text x="840" y="563" font-size="21" style="fill:#54677d" font-weight="400" text-anchor="start">过滤相同市场及有效元数据。</text>
+<text x="840" y="591" font-size="21" style="fill:#54677d" font-weight="400" text-anchor="start">政策 ID、标题、版本和语言。</text>
+<text x="840" y="619" font-size="21" style="fill:#54677d" font-weight="400" text-anchor="start">保留完整短政策原文 excerpt。</text>
+<text x="840" y="647" font-size="21" style="fill:#54677d" font-weight="400" text-anchor="start">记录检索后端与是否降级。</text>
+</g>
+<polyline points="400,585 432,585" fill="none" stroke="#2463c5" stroke-width="2.3" marker-end="url(#arrow-blue)"/>
+<polyline points="784,585 816,585" fill="none" stroke="#087c80" stroke-width="2.3" marker-end="url(#arrow-teal)"/>
+<g data-box="1200,485,352,200">
+<rect x="1200" y="485" width="352" height="200" rx="16" fill="#fff0f2" stroke="#ab394c"/>
+<rect x="1218" y="505" width="5" height="29" rx="2" fill="#ab394c" stroke="none"/>
+<text x="1236" y="529" font-size="25" style="fill:#ab394c" font-weight="600" text-anchor="start">失败策略</text>
+<text x="1224" y="563" font-size="21" style="fill:#54677d" font-weight="400" text-anchor="start">缺市场 / 无证据 / 检索异常：</text>
+<text x="1224" y="591" font-size="21" style="fill:#54677d" font-weight="400" text-anchor="start">图节点设置 human_required。</text>
+<text x="1224" y="619" font-size="21" style="fill:#54677d" font-weight="400" text-anchor="start">严格检索禁止静默降级。</text>
+<text x="1224" y="647" font-size="21" style="fill:#54677d" font-weight="400" text-anchor="start">允许 fallback 时须标记降级。</text>
+</g>
+<polyline points="1168,585 1200,585" fill="none" stroke="#ab394c" stroke-width="2.3" marker-end="url(#arrow-red)"/>
+<text x="1184" y="720" font-size="19" text-anchor="middle" style="fill:#ab394c;paint-order:stroke;stroke:#fff;stroke-width:8;stroke-linejoin:round">无有效证据</text>
+<g data-box="48,769,480,205">
+<rect x="48" y="769" width="480" height="205" rx="16" fill="#eff5ff" stroke="#2463c5"/>
+<rect x="66" y="789" width="5" height="29" rx="2" fill="#2463c5" stroke="none"/>
+<text x="84" y="813" font-size="25" style="fill:#2463c5" font-weight="600" text-anchor="start">FAQ / 排查：政策 → 回复</text>
+<text x="72" y="847" font-size="18" style="fill:#2463c5" font-weight="400" text-anchor="start" class="code">render_response_node</text>
+<text x="72" y="874" font-size="21" style="fill:#54677d" font-weight="400" text-anchor="start">选取政策原文中的保修 / 材料 / 排查条目。</text>
+<text x="72" y="902" font-size="21" style="fill:#54677d" font-weight="400" text-anchor="start">最终回复与 citations 来源保持一致。</text>
+<text x="72" y="930" font-size="21" style="fill:#54677d" font-weight="400" text-anchor="start">语言由会话设置控制；不做任意全文翻译。</text>
+</g>
+<g data-box="560,769,480,205">
+<rect x="560" y="769" width="480" height="205" rx="16" fill="#fff7e8" stroke="#916013"/>
+<rect x="578" y="789" width="5" height="29" rx="2" fill="#916013" stroke="none"/>
+<text x="596" y="813" font-size="25" style="fill:#916013" font-weight="600" text-anchor="start">维修申请：政策 + 事实 → 草稿</text>
+<text x="584" y="847" font-size="18" style="fill:#916013" font-weight="400" text-anchor="start" class="code">build_case_draft / validate_draft</text>
+<text x="584" y="874" font-size="21" style="fill:#54677d" font-weight="400" text-anchor="start">业务事实必须通过归属、市场、标识校验。</text>
+<text x="584" y="902" font-size="21" style="fill:#54677d" font-weight="400" text-anchor="start">草稿包含问题、客户事实与政策证据。</text>
+<text x="584" y="930" font-size="21" style="fill:#54677d" font-weight="400" text-anchor="start">附 tool_trace_ids 与 draft_fingerprint。</text>
+</g>
+<polyline points="992,685 992,737 800,737 800,769" fill="none" stroke="#2463c5" stroke-width="2.3" marker-end="url(#arrow-blue)"/>
+<text x="1094" y="746" font-size="19" text-anchor="middle" style="fill:#2463c5;paint-order:stroke;stroke:#fff;stroke-width:8;stroke-linejoin:round">有效证据 → 维修草稿</text>
+<polyline points="932,685 932,715 288,715 288,769" fill="none" stroke="#2463c5" stroke-width="2.3" marker-end="url(#arrow-blue)"/>
+<text x="488" y="751" font-size="19" text-anchor="middle" style="fill:#2463c5;paint-order:stroke;stroke:#fff;stroke-width:8;stroke-linejoin:round">有效证据 → 政策答复</text>
+<g data-box="1072,769,480,181">
+<rect x="1072" y="769" width="480" height="181" rx="16" fill="#ecf8f6" stroke="#087c80"/>
+<rect x="1090" y="789" width="5" height="29" rx="2" fill="#087c80" stroke="none"/>
+<text x="1108" y="813" font-size="25" style="fill:#087c80" font-weight="600" text-anchor="start">持久化与可追踪展示</text>
+<text x="1096" y="847" font-size="21" style="fill:#54677d" font-weight="400" text-anchor="start">Store：会话状态、完整消息、草稿与审计。</text>
+<text x="1096" y="875" font-size="21" style="fill:#54677d" font-weight="400" text-anchor="start">Checkpoint：有界消息上下文和图状态。</text>
+<text x="1096" y="903" font-size="21" style="fill:#54677d" font-weight="400" text-anchor="start">SSE：证据、工具轨迹、回复、草稿及 done。</text>
+</g>
+<polyline points="1040,862 1072,862" fill="none" stroke="#087c80" stroke-width="2.3" marker-end="url(#arrow-teal)"/>
+<g data-box="48,990,1504,162">
+<rect x="48" y="990" width="1504" height="162" rx="16" fill="#f2f5f9" stroke="#54677d"/>
+<rect x="66" y="1010" width="5" height="29" rx="2" fill="#54677d" stroke="none"/>
+<text x="84" y="1034" font-size="25" style="fill:#54677d" font-weight="600" text-anchor="start">数据口径与当前边界</text>
+<text x="72" y="1068" font-size="21" style="fill:#54677d" font-weight="400" text-anchor="start">消息请求表 agent_message_requests 保存请求指纹及实际结果；agent_draft_writes 保存外部写入意图和确认结果。</text>
+<text x="72" y="1096" font-size="21" style="fill:#54677d" font-weight="400" text-anchor="start">bounded_messages 只保留最近 20 条图消息；完整历史在 Store；政策库、业务 Store 和 checkpoint 是不同职责。</text>
+<text x="72" y="1124" font-size="21" style="fill:#54677d" font-weight="400" text-anchor="start">score 是 token overlap 估算分数，不是模型置信度；当前政策为模拟内容，不证明真实市场政策已获批准。</text>
+</g>
+</svg>
