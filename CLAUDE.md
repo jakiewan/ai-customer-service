@@ -66,12 +66,6 @@ cd domain_service && mvn -Dmaven.repo.local=.mvn/repository clean test
 
 # 三服务启动后端到端 smoke（FastAPI → LangGraph → MCP → Spring Boot）
 PYTHONPATH=. /opt/anaconda3/envs/ai-base/bin/python scripts/http_e2e_smoke.py
-
-# 27 个真实服务边界用例循环 3 轮
-PYTHONPATH=. /opt/anaconda3/envs/ai-base/bin/python scripts/run_boundary_loop.py
-
-# 全量回归（48 个离线用例 × 3 轮）
-PYTHONPATH=. /opt/anaconda3/envs/ai-base/bin/python scripts/run_regression_loop.py
 ```
 
 ### Lint / 格式化
@@ -120,7 +114,7 @@ Spring Boot (domain_service)             ← /internal/* 模拟业务接口 + Ca
 - `agent_service/tests/` — 7 个测试文件,分别覆盖 intent/policy、graph flow、pgvector RAG、API 契约、模型工厂、权限、回归矩阵;`test_pgvector_rag.py` 需要真实 pgvector,默认会被跳过。
 - `domain_service/src/main/java/com/globalcare/domain/` — Spring Boot 包结构 `api/DomainController` + `service/DomainService` + `model/*`(record 类)。
 - `frontend/index.html` — Vue 3 CDN 单文件;真实 SSE 消费,右侧 trace/policy/draft 三张卡片。
-- `scripts/` — `init_postgres.py` / `seed_policy_pgvector.py` / `http_e2e_smoke.py` / `live_boundary_e2e.py` / `run_boundary_loop.py` / `run_regression_loop.py`。
+- `scripts/` — `init_postgres.py` / `seed_policy_pgvector.py` / `http_e2e_smoke.py`。
 - `diagram/*.svg` — 项目已生成资产:思维导图、后端架构、Case Draft 时序。
 - 顶层 `.md` 资料:`技术方案.md`(架构权威来源) / `需求分析报告.md` / `开发执行状态.md` / `测试说明与报告.md` / `测试用例清单.md` / `SDD缺口清单.md` / `面试话术.md`。**架构改动前先翻 `技术方案.md`,再翻 `SDD缺口清单.md` 是否会触发新缺口**。
 
