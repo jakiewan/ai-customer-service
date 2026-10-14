@@ -12,5 +12,22 @@ services:
     volumes:
       - globalcare_pgdata:/var/lib/postgresql/data
 
+  # 第 1 层 FAQ 精确匹配 + 答案变体；仅绑定本机回环地址
+  redis:
+    image: redis:7.2-alpine
+    container_name: globalcare-redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "127.0.0.1:56379:6379"
+    volumes:
+      - globalcare_redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
 volumes:
   globalcare_pgdata:
+  globalcare_redisdata:

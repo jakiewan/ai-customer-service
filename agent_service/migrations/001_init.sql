@@ -20,18 +20,7 @@ CREATE TABLE IF NOT EXISTS conversation_messages (
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE TABLE IF NOT EXISTS policy_documents (
-    policy_id VARCHAR(128) PRIMARY KEY,
-    title VARCHAR(256) NOT NULL,
-    market VARCHAR(8) NOT NULL,
-    language VARCHAR(16) NOT NULL,
-    version VARCHAR(64) NOT NULL,
-    content TEXT NOT NULL,
-    embedding VECTOR(256),
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-
-CREATE INDEX IF NOT EXISTS policy_documents_market_idx ON policy_documents(market);
+-- policy_documents 已迁移到 Milvus，新库不再创建；存量库由 005_drop_policy_documents.sql 清理
 
 CREATE TABLE IF NOT EXISTS agent_audit_events (
     audit_id UUID PRIMARY KEY,
