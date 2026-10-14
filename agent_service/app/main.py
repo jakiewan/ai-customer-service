@@ -17,8 +17,8 @@ from .checkpointer import open_checkpointer, to_psycopg_dsn
 from .config import Settings, get_settings
 from .constants import ErrorCode
 from .graph import GraphService, build_graph
+from .knowledge_base import KnowledgeStore
 from .model_factory import AgentModel
-from .policy_store import PolicyStore
 from .postgres_store import PostgresStore
 from .schemas import (
     ApiResponse,
@@ -40,8 +40,12 @@ def _trace_id(request: Request) -> str:
     return supplied if re.fullmatch(r"[A-Za-z0-9_-]{1,64}", supplied) else str(uuid4())
 
 
-def _error_response(code: ErrorCode | str, message: str, trace_id: str, *, retryable: bool = False) -> JSONResponse:
-    payload = ErrorResponse(code=code, message=message, retryable=retryable, trace_id=trace_id).model_dump(mode="json")
+def _error_response(
+    code: ErrorCode | str, message: str, trace_id: str, *, retryable: bool = False
+) -> JSONResponse:
+    payload = ErrorResponse(
+        code=code, message=message, retryable=retryable, trace_id=trace_id
+    ).model_dump(mode="json")
     return JSONResponse(status_code=_status_for_error(str(code)), content=payload)
 
 
@@ -62,13 +66,17 @@ async def _postgres_ready(database_url: str) -> bool:
     def probe() -> bool:
         import psycopg
 
-        with psycopg.connect(to_psycopg_dsn(database_url), connect_timeout=2) as connection:
+        with psycopg.connect(
+            to_psycopg_dsn(database_url), connect_timeout=2
+        ) as connection:
             connection.execute("SELECT 1")
         return True
 
     try:
         return await asyncio.to_thread(probe)
-    except Exception:  # noqa: BLE001 - readiness 必须降级为 down，不能让健康检查抛出 500。
+    except (
+        Exception
+    ):  # noqa: BLE001 - readiness 必须降级为 down，不能让健康检查抛出 500。
         return False
 
 
@@ -79,7 +87,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         description="商品与售后知识咨询及官方入口引导的 REST 与 SSE 接口。",
     )
     app_settings = settings or get_settings()
-    allowed_origins = [origin.strip() for origin in app_settings.cors_origins.split(",") if origin.strip()]
+    allowed_origins = [
+        origin.strip()
+        for origin in app_settings.cors_origins.split(",")
+        if origin.strip()
+    ]
     app.add_middleware(
         CORSMiddleware,
         allow_origins=allowed_origins,
@@ -90,13 +102,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     policy_dir = Path(app_settings.policy_dir)
     if not policy_dir.is_absolute():
         policy_dir = Path(__file__).resolve().parents[1] / "data" / "policies"
-    policy_store = PolicyStore(
+    policy_store = KnowledgeStore(
         policy_dir,
         backend=app_settings.policy_backend,
-        database_url=app_settings.database_url,
         embedding_mode=app_settings.embedding_mode,
         embedding_model=app_settings.embedding_model,
         embedding_dimensions=app_settings.embedding_dimensions,
+        milvus_uri=app_settings.milvus_uri,
+        milvus_db=app_settings.milvus_db,
+        redis_url=app_settings.redis_url,
         allow_fallback=app_settings.policy_allow_fallback,
         require_approved=app_settings.environment in {"staging", "production"},
     )
@@ -107,8 +121,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         model_name=app_settings.minimax_model,
         temperature=app_settings.llm_temperature,
     )
-    store = (PostgresStore(app_settings.database_url, app_settings.message_lock_timeout_seconds)
-             if app_settings.persistence_mode == "postgres" else InMemoryStore(app_settings.message_lock_timeout_seconds))
+    store = (
+        PostgresStore(
+            app_settings.database_url, app_settings.message_lock_timeout_seconds
+        )
+        if app_settings.persistence_mode == "postgres"
+        else InMemoryStore(app_settings.message_lock_timeout_seconds)
+    )
     graph_kwargs = {
         "model": model,
         "policy_store": policy_store,
@@ -120,7 +139,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     conversation_service = ConversationService(
         store=store,
         graph_service=GraphService(
-            graph, max_steps=app_settings.max_graph_steps, token_budget=app_settings.token_budget
+            graph,
+            max_steps=app_settings.max_graph_steps,
+            token_budget=app_settings.token_budget,
         ),
         run_timeout_seconds=app_settings.agent_run_timeout_seconds,
         max_active_runs=app_settings.max_active_runs,
@@ -135,9 +156,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         try:
             if isinstance(store, PostgresStore):
                 await store.open()
-            async with open_checkpointer(app_settings.checkpointer_mode, app_settings.database_url) as checkpointer:
+            async with open_checkpointer(
+                app_settings.checkpointer_mode, app_settings.database_url
+            ) as checkpointer:
                 if app_settings.checkpointer_mode.lower() == "postgres":
-                    conversation_service.graph_service.graph = build_graph(**graph_kwargs, checkpointer=checkpointer)
+                    conversation_service.graph_service.graph = build_graph(
+                        **graph_kwargs, checkpointer=checkpointer
+                    )
                     app.state.checkpointer_state = "up"
                 else:
                     app.state.checkpointer_state = "memory"
@@ -156,35 +181,56 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.exception_handler(RequestValidationError)
     async def validation_exception_handler(request: Request, _: RequestValidationError):
-        return _error_response(ErrorCode.VALIDATION_ERROR, "请求字段校验失败", _trace_id(request))
+        return _error_response(
+            ErrorCode.VALIDATION_ERROR, "请求字段校验失败", _trace_id(request)
+        )
 
     @app.exception_handler(HTTPException)
     async def http_exception_handler(request: Request, exc: HTTPException):
-        code = ErrorCode.UNAUTHORIZED if exc.status_code == 401 else ErrorCode.INTERNAL_ERROR
+        code = (
+            ErrorCode.UNAUTHORIZED
+            if exc.status_code == 401
+            else ErrorCode.INTERNAL_ERROR
+        )
         if exc.status_code == 404:
             code = ErrorCode.CONVERSATION_NOT_FOUND
         return _error_response(code, str(exc.detail), _trace_id(request))
 
     @app.exception_handler(ConversationNotFoundError)
-    async def conversation_not_found_handler(request: Request, _: ConversationNotFoundError):
-        return _error_response(ErrorCode.CONVERSATION_NOT_FOUND, "会话不存在", _trace_id(request))
+    async def conversation_not_found_handler(
+        request: Request, _: ConversationNotFoundError
+    ):
+        return _error_response(
+            ErrorCode.CONVERSATION_NOT_FOUND, "会话不存在", _trace_id(request)
+        )
 
     @app.exception_handler(StoreRequestError)
     async def store_request_exception_handler(request: Request, exc: StoreRequestError):
-        return JSONResponse(status_code=409, content={
-            "code": exc.code, "message": str(exc), "retryable": exc.retryable,
-            "trace_id": _trace_id(request),
-        })
+        return JSONResponse(
+            status_code=409,
+            content={
+                "code": exc.code,
+                "message": str(exc),
+                "retryable": exc.retryable,
+                "trace_id": _trace_id(request),
+            },
+        )
 
     @app.exception_handler(PermissionError)
     async def permission_exception_handler(request: Request, _: PermissionError):
-        return _error_response(ErrorCode.UNAUTHORIZED, "Demo Token 无效或无权访问", _trace_id(request))
+        return _error_response(
+            ErrorCode.UNAUTHORIZED, "Demo Token 无效或无权访问", _trace_id(request)
+        )
 
     @app.get("/healthz", response_model=ApiResponse[dict[str, str]], tags=["system"])
     async def healthz(request: Request):
         trace_id = _trace_id(request)
         return ApiResponse(
-            data={"status": "ok", "service": app_settings.app_name, "version": app_settings.app_version},
+            data={
+                "status": "ok",
+                "service": app_settings.app_name,
+                "version": app_settings.app_version,
+            },
             trace_id=trace_id,
         )
 
@@ -193,40 +239,67 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         trace_id = _trace_id(request)
         # memory 模式是明确的离线 fallback，不伪装成 PostgreSQL 已连接。
         postgres_state = "degraded"
-        if app_settings.checkpointer_mode == "postgres" or app_settings.persistence_mode == "postgres":
-            postgres_state = "up" if await _postgres_ready(app_settings.database_url) else "down"
-        store_state = "up" if isinstance(store, InMemoryStore) else "up" if await store.ready() else "down"
-        # 根据实际 PolicyStore 实例判断 pgvector 是否创建成功。
-        pgvector_state = "up" if policy_store.pg_vector_store is not None else "degraded"
-        if app_settings.policy_backend == "pgvector":
-            try:
-                async with asyncio.timeout(4):
-                    evidence = await asyncio.to_thread(policy_store.retrieve, "手机保修政策", "CN", 1, goodsid="65539", sales_channel="MALL")
-                pgvector_state = "up" if evidence and not policy_store.degraded else "down"
-            except Exception:
-                pgvector_state = "down"
-        model_state = "configured" if app_settings.llm_mode.lower() == "mock" or app_settings.minimax_api_key else "missing"
-        ready = (store_state == "up" and model_state != "missing" and postgres_state != "down" and
-                 (app_settings.policy_backend != "pgvector" or pgvector_state == "up"))
+        if (
+            app_settings.checkpointer_mode == "postgres"
+            or app_settings.persistence_mode == "postgres"
+        ):
+            postgres_state = (
+                "up" if await _postgres_ready(app_settings.database_url) else "down"
+            )
+        store_state = (
+            "up"
+            if isinstance(store, InMemoryStore)
+            else "up" if await store.ready() else "down"
+        )
+        # memory 后端如实报告 degraded；milvus 后端必须真实探测 Milvus 与 Redis。
+        try:
+            async with asyncio.timeout(4):
+                knowledge_state = await asyncio.to_thread(policy_store.probe)
+        except Exception:  # noqa: BLE001 - 探测超时视为 down。
+            knowledge_state = {"milvus": "down", "redis": "down"}
+        model_state = (
+            "configured"
+            if app_settings.llm_mode.lower() == "mock" or app_settings.minimax_api_key
+            else "missing"
+        )
+        ready = (
+            store_state == "up"
+            and model_state != "missing"
+            and postgres_state != "down"
+            and (
+                app_settings.policy_backend != "milvus"
+                or set(knowledge_state.values()) == {"up"}
+            )
+        )
         payload = ApiResponse(
             data={
                 "status": "ready" if ready else "not_ready",
                 "store": store_state,
                 "postgres": postgres_state,
-                "pgvector": pgvector_state,
+                "milvus": knowledge_state["milvus"],
+                "redis": knowledge_state["redis"],
+                "knowledge_backend": policy_store.active_backend,
                 "model_config": model_state,
             },
             trace_id=trace_id,
         )
-        return JSONResponse(status_code=200 if ready else 503, content=payload.model_dump(mode="json"))
+        return JSONResponse(
+            status_code=200 if ready else 503, content=payload.model_dump(mode="json")
+        )
 
-    @app.post("/api/v1/conversations", response_model=ApiResponse[ConversationResponse], tags=["conversation"])
+    @app.post(
+        "/api/v1/conversations",
+        response_model=ApiResponse[ConversationResponse],
+        tags=["conversation"],
+    )
     async def create_conversation(
         request: Request,
         body: CreateConversationRequest,
         token: Principal = Depends(demo_token_dependency),
     ):
-        result = await conversation_service.create_conversation(token.subject_key, body, actor_context=token.actor_context)
+        result = await conversation_service.create_conversation(
+            token.subject_key, body, actor_context=token.actor_context
+        )
         return ApiResponse(data=result, trace_id=_trace_id(request))
 
     @app.post(
@@ -244,22 +317,35 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         trace_id = _trace_id(request)
 
         async def event_stream():
-            async for event in conversation_service.stream_message(conversation_id, token.subject_key, body, trace_id):
+            async for event in conversation_service.stream_message(
+                conversation_id, token.subject_key, body, trace_id
+            ):
                 yield f"event: {event['event']}\ndata: {json.dumps(event['data'], ensure_ascii=False)}\n\n"
 
         return StreamingResponse(
             event_stream(),
             media_type="text/event-stream",
-            headers={"Cache-Control": "no-cache", "Connection": "keep-alive", "X-Trace-Id": trace_id, "X-Accel-Buffering": "no"},
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "X-Trace-Id": trace_id,
+                "X-Accel-Buffering": "no",
+            },
         )
 
-    @app.get("/api/v1/conversations/{conversation_id}", response_model=ApiResponse[ConversationView], tags=["conversation"])
+    @app.get(
+        "/api/v1/conversations/{conversation_id}",
+        response_model=ApiResponse[ConversationView],
+        tags=["conversation"],
+    )
     async def get_conversation(
         request: Request,
         conversation_id: UUID,
         token: Principal = Depends(demo_token_dependency),
     ):
-        result = await conversation_service.conversation_view(conversation_id, token.subject_key)
+        result = await conversation_service.conversation_view(
+            conversation_id, token.subject_key
+        )
         return ApiResponse(data=result, trace_id=_trace_id(request))
 
     @app.get(
@@ -272,7 +358,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         conversation_id: UUID,
         token: Principal = Depends(demo_token_dependency),
     ):
-        result = await conversation_service.audit_views(conversation_id, token.subject_key)
+        result = await conversation_service.audit_views(
+            conversation_id, token.subject_key
+        )
         return ApiResponse(data=result, trace_id=_trace_id(request))
 
     return app

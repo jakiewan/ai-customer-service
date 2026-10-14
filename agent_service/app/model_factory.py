@@ -24,7 +24,15 @@ class IntentDecision(BaseModel):
 class AgentModel:
     """LangChain 模型工厂：默认 mock 保证离线可测，MiniMax-M3 可通过配置开启。"""
 
-    def __init__(self, *, mode: str, api_key: str, base_url: str, model_name: str, temperature: float) -> None:
+    def __init__(
+        self,
+        *,
+        mode: str,
+        api_key: str,
+        base_url: str,
+        model_name: str,
+        temperature: float
+    ) -> None:
         self.mode = mode.lower()
         self._intent_chain = None
         self._raw_intent_chain = None
@@ -37,7 +45,8 @@ class AgentModel:
                         "system",
                         (
                             "你是售后客服路由器。只输出结构化字段，不回答用户问题。\n"
-                            "意图只能是 FAQ、TROUBLESHOOTING、REPAIR_STATUS、AFTERSALES_LINK、PURCHASE_LINK、GENERAL。\n"
+                            "意图只能是 FAQ、TROUBLESHOOTING、REPAIR_STATUS、AFTERSALES_LINK、PURCHASE_LINK、UNKNOWN；"
+                            "无法确定时必须输出 UNKNOWN。\n"
                             "当前客服仅服务中国大陆，market 固定为 CN，不识别或询问购买国家。"
                         ),
                     ),
@@ -56,14 +65,18 @@ class AgentModel:
             self._raw_intent_chain = prompt | model
             self._intent_chain = prompt | model.with_structured_output(IntentDecision)
 
-    async def classify(self, message: str, *, current_market: str | None, current_language: str | None) -> IntentDecision:
+    async def classify(
+        self, message: str, *, current_market: str | None, current_language: str | None
+    ) -> IntentDecision:
         if self._intent_chain is not None:
             try:
                 result = await self._intent_chain.ainvoke({"message": message})
                 if isinstance(result, IntentDecision):
                     return result
                 return IntentDecision.model_validate(result)
-            except Exception as exc:  # noqa: BLE001 - Provider 失败必须回退到确定性安全路由。
+            except (
+                Exception
+            ) as exc:  # noqa: BLE001 - Provider 失败必须回退到确定性安全路由。
                 logger.error("结构化意图调用失败: type=%s", type(exc).__name__)
                 parsed = await self._parse_raw_intent(message)
                 if parsed is not None:
@@ -93,7 +106,9 @@ class AgentModel:
                 return None
             payload = _normalize_intent_payload(json.loads(candidate))
             return IntentDecision.model_validate(payload)
-        except Exception as exc:  # noqa: BLE001 - 无法通过 schema 校验时必须走确定性 fallback。
+        except (
+            Exception
+        ) as exc:  # noqa: BLE001 - 无法通过 schema 校验时必须走确定性 fallback。
             logger.error("模型结构化内容不可用: type=%s", type(exc).__name__)
             return None
 
@@ -110,8 +125,14 @@ def _message_text(content: object) -> str:
 
 
 def _extract_json_object(content: str) -> str | None:
-    without_thinking = re.sub(r"<think>.*?</think>", "", content, flags=re.DOTALL).strip()
-    fenced = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", without_thinking, flags=re.DOTALL | re.IGNORECASE)
+    without_thinking = re.sub(
+        r"<think>.*?</think>", "", content, flags=re.DOTALL
+    ).strip()
+    fenced = re.search(
+        r"```(?:json)?\s*(\{.*?\})\s*```",
+        without_thinking,
+        flags=re.DOTALL | re.IGNORECASE,
+    )
     candidate = fenced.group(1) if fenced else without_thinking
     start, end = candidate.find("{"), candidate.rfind("}")
     if start < 0 or end < start:
@@ -126,7 +147,13 @@ def _normalize_intent_payload(payload: object) -> dict[str, object]:
     if not isinstance(payload, dict):
         raise TypeError("模型意图输出不是 JSON object")
     normalized = dict(payload)
-    language_aliases = {"zh": "zh-CN", "zh-cn": "zh-CN", "en": "en", "en-us": "en", "en-gb": "en"}
+    language_aliases = {
+        "zh": "zh-CN",
+        "zh-cn": "zh-CN",
+        "en": "en",
+        "en-us": "en",
+        "en-gb": "en",
+    }
     language = normalized.get("language")
     if isinstance(language, str):
         normalized["language"] = language_aliases.get(language.lower(), language)

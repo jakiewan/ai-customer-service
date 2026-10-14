@@ -19,7 +19,9 @@ class Settings(BaseSettings):
 
     app_name: str = "globalcare-agent"
     app_version: str = "0.1.0"
-    environment: Literal["local", "development", "test", "staging", "production"] = "local"
+    environment: Literal["local", "development", "test", "staging", "production"] = (
+        "local"
+    )
     demo_token: str = Field(default="globalcare-demo-token", repr=False)
     auth_mode: Literal["demo", "jwt"] = "demo"
     jwt_public_key: str = ""
@@ -35,12 +37,19 @@ class Settings(BaseSettings):
     llm_temperature: float = 0.1
 
     embedding_mode: Literal["hash", "huggingface"] = "hash"
-    embedding_model: str = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
-    embedding_dimensions: int = 256
-    policy_backend: Literal["memory", "pgvector"] = "memory"
+    # BGE-M3 dense 向量 1024 维；hash 离线模式同维度，便于与 Milvus schema 对齐。
+    embedding_model: str = "BAAI/bge-m3"
+    embedding_dimensions: int = Field(default=1024, ge=8, le=4096)
+    policy_backend: Literal["memory", "milvus"] = "memory"
     policy_allow_fallback: bool = True
     policy_dir: str = "agent_service/data/policies"
-    database_url: str = Field(default="postgresql+psycopg://postgres:postgres@127.0.0.1:5432/globalcare_agent", repr=False)
+    milvus_uri: str = "http://127.0.0.1:19530"
+    milvus_db: str = "ai_customer_service"
+    redis_url: str = Field(default="redis://127.0.0.1:56379/0", repr=False)
+    database_url: str = Field(
+        default="postgresql+psycopg://postgres:postgres@127.0.0.1:5432/globalcare_agent",
+        repr=False,
+    )
     persistence_mode: Literal["memory", "postgres"] = "memory"
     checkpointer_mode: Literal["memory", "postgres"] = "memory"
 
@@ -67,13 +76,21 @@ class Settings(BaseSettings):
     def validate_auth(self):
         for url in (self.purchase_url, self.aftersales_url):
             parsed = urlparse(url)
-            if url and (parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password):
+            if url and (
+                parsed.scheme != "https"
+                or not parsed.hostname
+                or parsed.username
+                or parsed.password
+            ):
                 raise ValueError("官方入口必须是无内嵌凭证的 HTTPS URL")
-        if self.auth_mode == "jwt" and not all((self.jwt_public_key, self.jwt_issuer, self.jwt_audience)):
+        if self.auth_mode == "jwt" and not all(
+            (self.jwt_public_key, self.jwt_issuer, self.jwt_audience)
+        ):
             raise ValueError("JWT 模式必须提供公钥、issuer 和 audience")
         if self.auth_mode == "jwt":
             from cryptography.hazmat.primitives.serialization import load_pem_public_key
             from cryptography.hazmat.primitives.asymmetric.rsa import RSAPublicKey
+
             try:
                 key = load_pem_public_key(self.jwt_public_key.encode())
                 if not isinstance(key, RSAPublicKey) or key.key_size < 2048:
@@ -81,18 +98,46 @@ class Settings(BaseSettings):
             except (ValueError, TypeError):
                 raise ValueError("JWT 公钥必须是至少 2048 位的 RSA 公钥") from None
         if self.environment in {"staging", "production"}:
-            required = (self.auth_mode == "jwt", self.persistence_mode == "postgres", self.checkpointer_mode == "postgres",
-                        self.policy_backend == "pgvector", self.embedding_mode == "huggingface", not self.policy_allow_fallback,
-                        self.llm_mode == "minimax", bool(self.minimax_api_key))
+            required = (
+                self.auth_mode == "jwt",
+                self.persistence_mode == "postgres",
+                self.checkpointer_mode == "postgres",
+                self.policy_backend == "milvus",
+                self.embedding_mode == "huggingface",
+                not self.policy_allow_fallback,
+                self.llm_mode == "minimax",
+                bool(self.minimax_api_key),
+            )
             if not all(required):
-                raise ValueError("生产/预发必须使用 JWT、PostgreSQL、语义检索、严格政策和真实模型")
-            origins = [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]
+                raise ValueError(
+                    "生产/预发必须使用 JWT、PostgreSQL、语义检索、严格政策和真实模型"
+                )
+            origins = [
+                origin.strip()
+                for origin in self.cors_origins.split(",")
+                if origin.strip()
+            ]
             urls = [*origins, self.jwt_issuer, self.minimax_base_url]
-            if not origins or any(urlparse(url).scheme != "https" or not urlparse(url).hostname or
-                                  urlparse(url).username or urlparse(url).password or "*" in url for url in urls):
-                raise ValueError("生产/预发来源和远程服务必须使用明确 HTTPS 地址，不允许 null、通配符或 URL 内凭证")
-            database = urlparse(self.database_url.replace("postgresql+psycopg://", "postgresql://", 1))
-            if database.username == "postgres" or database.password in {None, "", "postgres", "password"}:
+            if not origins or any(
+                urlparse(url).scheme != "https"
+                or not urlparse(url).hostname
+                or urlparse(url).username
+                or urlparse(url).password
+                or "*" in url
+                for url in urls
+            ):
+                raise ValueError(
+                    "生产/预发来源和远程服务必须使用明确 HTTPS 地址，不允许 null、通配符或 URL 内凭证"
+                )
+            database = urlparse(
+                self.database_url.replace("postgresql+psycopg://", "postgresql://", 1)
+            )
+            if database.username == "postgres" or database.password in {
+                None,
+                "",
+                "postgres",
+                "password",
+            }:
                 raise ValueError("生产/预发数据库必须使用专用账号和非示例凭证")
         return self
 

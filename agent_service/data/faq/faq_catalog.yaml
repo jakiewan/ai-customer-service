@@ -1,0 +1,91 @@
+# 四层路由知识目录（模拟数据，口径见 SDD缺口清单 GAP-005）。
+# 问题身份：intent_id -> faq_group_id -> faq_item_id，与品类/渠道无关。
+# 答案变体：由 answer_clause 从 data/policies/*.md 的同名条款生成，
+#           key = faq_item_id + goodsid + sales_channel + version。
+intents:
+  - intent_id: FAQ
+    route_target: FAQ
+    faq_group_id: grp_policy
+    corpus:
+      - 保修政策是怎样的
+      - 售后政策有哪些
+  - intent_id: TROUBLESHOOTING
+    route_target: FAQ
+    faq_group_id: grp_troubleshoot
+    corpus:
+      - 手机坏了怎么办
+      - 设备出故障了怎么处理
+  - intent_id: AFTERSALES_LINK
+    route_target: SOP
+    corpus:
+      - 我要申请售后
+      - 在哪里报修
+      - 给我售后申请入口
+      - how do I submit a repair request
+  - intent_id: REPAIR_STATUS
+    route_target: SOP
+    corpus:
+      - 我的手机修好了没有
+      - 帮我看看维修到哪一步了
+      - check my repair status
+  - intent_id: PURCHASE_LINK
+    route_target: SOP
+    corpus:
+      - 在哪里可以买手机
+      - 给我官网购买链接
+      - where can I buy a phone
+
+faq_items:
+  - faq_item_id: warranty_period
+    intent_id: FAQ
+    faq_group_id: grp_policy
+    standard_question: 保修期多久
+    answer_clause: 主机有限保修期
+    similar_questions:
+      - 保修
+      - 保修政策
+      - 保修多久
+      - 保多久
+      - 保修期多长
+      - 保修期是多久
+      - 质保几年
+      - 保修几个月
+      - how long is the warranty
+      - warranty period
+  - faq_item_id: warranty_scope
+    intent_id: FAQ
+    faq_group_id: grp_policy
+    standard_question: 保修适用于哪些设备
+    answer_clause: 适用范围
+    similar_questions:
+      - 保修适用范围
+      - 保修范围是什么
+      - 哪里买的设备可以保修
+      - which devices are eligible for warranty
+      - warranty coverage
+  - faq_item_id: repair_materials
+    intent_id: FAQ
+    faq_group_id: grp_policy
+    standard_question: 申请维修需要什么材料
+    answer_clause: 申请维修
+    similar_questions:
+      - 维修需要什么材料
+      - 申请维修材料
+      - 送修要准备什么
+      - 报修需要提供什么
+      - what documents do I need for repair
+      - repair requirements
+  - faq_item_id: cannot_power_on
+    intent_id: TROUBLESHOOTING
+    faq_group_id: grp_troubleshoot
+    standard_question: 设备无法开机怎么办
+    answer_clause: 无法开机排查
+    similar_questions:
+      - 无法开机
+      - 不能开机
+      - 开不了机
+      - 黑屏开不了机
+      - 手机不充电
+      - cannot power on
+      - phone won't turn on
+      - not charging

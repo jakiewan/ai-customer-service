@@ -2,7 +2,7 @@ import pytest
 
 from agent_service.app.constants import Intent, Market
 from agent_service.app.intent import classify_intent, extract_context
-from agent_service.app.policy_store import PolicyStore
+from agent_service.app.knowledge_base import KnowledgeStore
 
 
 def test_intent_layers_route_to_different_paths() -> None:
@@ -18,17 +18,39 @@ def test_context_extracts_order_with_fixed_mainland_market() -> None:
     assert context.market == Market.CN
 
 
-def test_policy_retrieval_defaults_to_mainland() -> None:
-    store = PolicyStore("agent_service/data/policies")
-    evidence = store.retrieve("无法开机需要怎么处理", goodsid="65539", sales_channel="MALL")
-    assert evidence
-    assert all(item.market == Market.CN for item in evidence)
-    assert all(item.policy_id.startswith("CN-") for item in evidence)
+def test_layer1_exact_match_ignores_punctuation_and_scope_words() -> None:
+    store = KnowledgeStore("agent_service/data/policies")
+    ref = store.exact_match("请问，手机商城保修期多久？")
+    assert ref is not None
+    assert (ref.intent_id, ref.faq_group_id, ref.faq_item_id) == (
+        "FAQ",
+        "grp_policy",
+        "warranty_period",
+    )
+    assert store.exact_match("今天天气怎么样") is None
 
 
-@pytest.mark.parametrize("text", [
-    "手机保修", "my phone warranty", "My phone cannot power on",
-    "ORD-CN-2001", "SN-CN-1001", "country: US",
-])
+def test_layer2_matches_faq_within_group_and_returns_mainland_answer() -> None:
+    store = KnowledgeStore("agent_service/data/policies")
+    match = store.match_faq(
+        "手机无法开机，需要怎么处理", "grp_troubleshoot", "65539", "MALL"
+    )
+    assert match.item is not None and match.item.faq_item_id == "cannot_power_on"
+    evidence = store.answer(match.item.faq_item_id, "65539", "MALL", match.score)
+    assert evidence is not None and evidence.market == Market.CN
+    assert evidence.policy_id.startswith("CN-")
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "手机保修",
+        "my phone warranty",
+        "My phone cannot power on",
+        "ORD-CN-2001",
+        "SN-CN-1001",
+        "country: US",
+    ],
+)
 def test_text_does_not_switch_mainland_market(text):
     assert extract_context(text).market == Market.CN

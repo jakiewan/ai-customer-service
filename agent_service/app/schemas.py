@@ -64,8 +64,12 @@ class PolicyEvidence(BaseModel):
     sales_channel: str = ""
     excerpt: str
     score: float = Field(ge=0, le=1)
-    score_kind: Literal["token_overlap_heuristic"] = "token_overlap_heuristic"
-    retrieval_backend: Literal["memory", "pgvector"] = "memory"
+    # token_overlap_heuristic / pgvector 仅用于兼容历史消息里已持久化的引用。
+    score_kind: Literal[
+        "exact_match", "cosine_similarity", "token_overlap_heuristic"
+    ] = "cosine_similarity"
+    retrieval_backend: Literal["memory", "milvus", "pgvector"] = "memory"
+    faq_item_id: str = ""
     degraded: bool = False
 
 
@@ -75,8 +79,12 @@ class BusinessFact(BaseModel):
     serial_number: str = Field(min_length=1, max_length=128, strict=True)
     market: Market
     product_model: str = Field(min_length=1, max_length=128, strict=True)
-    customer_id: str | None = Field(default=None, min_length=1, max_length=128, strict=True)
-    tenant_id: str | None = Field(default=None, min_length=1, max_length=128, strict=True)
+    customer_id: str | None = Field(
+        default=None, min_length=1, max_length=128, strict=True
+    )
+    tenant_id: str | None = Field(
+        default=None, min_length=1, max_length=128, strict=True
+    )
     status: str | None = Field(default=None, min_length=1, max_length=128, strict=True)
     status_label: str | None = Field(default=None, max_length=256, strict=True)
 

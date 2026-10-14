@@ -32,7 +32,22 @@ class Intent(StrEnum):
     REPAIR_STATUS = "REPAIR_STATUS"
     AFTERSALES_LINK = "AFTERSALES_LINK"
     PURCHASE_LINK = "PURCHASE_LINK"
-    GENERAL = "GENERAL"
+    # 第 3 层兜底：规则、Redis、Milvus、LLM 均无法确定时，返回固定话术。
+    UNKNOWN = "UNKNOWN"
+
+
+SOP_INTENTS = frozenset(
+    {Intent.PURCHASE_LINK, Intent.AFTERSALES_LINK, Intent.REPAIR_STATUS}
+)
+FAQ_INTENTS = frozenset({Intent.FAQ, Intent.TROUBLESHOOTING})
+
+
+class RouteLayer(StrEnum):
+    L0_RULE = "L0_RULE"
+    L1_REDIS_EXACT = "L1_REDIS_EXACT"
+    L2_MILVUS_SEMANTIC = "L2_MILVUS_SEMANTIC"
+    L3_LLM = "L3_LLM"
+    L3_UNKNOWN = "L3_UNKNOWN"
 
 
 class ConversationStatus(StrEnum):
@@ -95,4 +110,3 @@ ALLOWED_MODEL_TOOLS = frozenset(
         ToolName.QUERY_REPAIR_STATUS.value,
     }
 )
-

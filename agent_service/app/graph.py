@@ -5,7 +5,15 @@ from typing import Any
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
 
-from .constants import AgentPhase, ConversationStatus, Intent, Market
+from .constants import (
+    FAQ_INTENTS,
+    SOP_INTENTS,
+    AgentPhase,
+    ConversationStatus,
+    Intent,
+    Market,
+    RouteLayer,
+)
 from .intent import (
     FAQ_TERMS,
     classify_intent,
@@ -13,11 +21,26 @@ from .intent import (
     issue_summary,
     link_cancelled,
 )
+from .knowledge_base import KnowledgeStore
 from .model_factory import AgentModel
-from .policy_store import PolicyStore
 from .state import AfterSalesState, bounded_messages
 
 logger = logging.getLogger(__name__)
+
+UNKNOWN_REPLY = "抱歉，我暂时没有理解你的问题。我可以帮你查询保修政策、排查故障，或提供官网商城和售后申请入口，请换个说法描述你的问题。"
+RESUME_BLOCK_TERMS = (
+    "购买",
+    "我要买",
+    "我想买",
+    "申请",
+    "入口",
+    "链接",
+    "保修",
+    "故障",
+    "维修",
+    "warranty",
+    "repair",
+)
 
 
 def _last_user_message(state: AfterSalesState) -> str:
@@ -36,68 +59,143 @@ def _step(state: AfterSalesState, **patch: Any) -> dict[str, Any]:
 
 
 def _missing_fields(state: AfterSalesState) -> list[str]:
-    if state.get("intent") not in {Intent.FAQ, Intent.TROUBLESHOOTING}:
+    if state.get("intent") not in FAQ_INTENTS:
         return []
     return [key for key in ("goodsid", "sales_channel") if not state.get(key)]
+
+
+def _route(
+    layer: RouteLayer,
+    intent: Intent | str,
+    *,
+    target: str | None = None,
+    group: str | None = None,
+    item: str | None = None,
+    score: float | None = None,
+) -> dict[str, Any]:
+    intent = Intent(str(intent))
+    if target is None:
+        target = (
+            "SOP" if intent in SOP_INTENTS else "FAQ" if intent in FAQ_INTENTS else None
+        )
+    return {
+        "route_layer": layer.value,
+        "intent": intent.value,
+        "route_target": target,
+        "faq_group_id": group,
+        "faq_item_id": item,
+        "route_score": score,
+    }
 
 
 def build_graph(
     *,
     model: AgentModel,
-    policy_store: PolicyStore,
+    policy_store: KnowledgeStore,
     max_steps: int,
     purchase_url: str = "",
     aftersales_url: str = "",
     checkpointer: Any = None,
 ):
-    async def classify_node(state: AfterSalesState) -> dict[str, Any]:
-        message = _last_user_message(state)
-        explicit = extract_context(message)
+    async def route_turn(state: AfterSalesState, message: str) -> dict[str, Any]:
+        """四层漏斗：L0 规则 → L1 Redis 精确匹配 → L2 Milvus 语义 → L3 LLM / UNKNOWN。"""
+
+        cancelled = link_cancelled(message)
+        rule_intent = classify_intent(message)
+        # 交互选择：上一轮分差过小给出候选，用户回复序号即确定 faq_item_id。
+        candidates = state.get("faq_candidates") or []
+        if message.strip() in {str(index + 1) for index in range(len(candidates))}:
+            ref = policy_store.item(candidates[int(message.strip()) - 1])
+            if ref is not None:
+                return _route(
+                    RouteLayer.L2_MILVUS_SEMANTIC,
+                    ref.intent_id,
+                    group=ref.faq_group_id,
+                    item=ref.faq_item_id,
+                )
+        # L0：SOP 操作类与高风险/非支持产品硬规则，不进入检索。
+        if rule_intent in SOP_INTENTS and not cancelled:
+            return _route(RouteLayer.L0_RULE, rule_intent)
+        if policy_store.is_unsupported(message):
+            return _route(RouteLayer.L0_RULE, Intent.FAQ)
+        # L1：Redis 标准问/相似问 hash 精确匹配，直接得到 intent/group/item 三元组。
+        ref = await asyncio.to_thread(policy_store.exact_match, message)
+        if ref is not None:
+            return _route(
+                RouteLayer.L1_REDIS_EXACT,
+                ref.intent_id,
+                group=ref.faq_group_id,
+                item=ref.faq_item_id,
+                score=1.0,
+            )
+        # L2 第 1-3 步：意图语料检索并按 intent_id 聚合；FAQ 意图映射到 faq_group_id。
+        hit = await asyncio.to_thread(policy_store.classify_intent, message)
+        meta = policy_store.intent_meta(hit.intent_id) if hit else None
+        if meta is not None and not (cancelled and meta.route_target == "SOP"):
+            return _route(
+                RouteLayer.L2_MILVUS_SEMANTIC,
+                meta.intent_id,
+                target=meta.route_target,
+                group=meta.faq_group_id,
+                score=hit.score,
+            )
+        # 关键词只给出 FAQ 方向，FAQ 条目仍由 L2 组内检索 + 适用性审查决定。
+        if rule_intent in FAQ_INTENTS:
+            return _route(RouteLayer.L0_RULE, rule_intent)
+        # L3：LLM 分类兜底；失败、否定入口或仍无法确定则 UNKNOWN 固定话术。
         decision = await model.classify(
             message,
             current_market=state.get("market"),
             current_language=state.get("language"),
         )
-        rule_intent = classify_intent(message)
-        intent = (
-            rule_intent
-            if rule_intent != Intent.GENERAL or link_cancelled(message)
-            else decision.intent
-        )
+        if decision.intent != Intent.UNKNOWN and not (
+            cancelled and decision.intent in SOP_INTENTS
+        ):
+            return _route(RouteLayer.L3_LLM, decision.intent)
+        return _route(RouteLayer.L3_UNKNOWN, Intent.UNKNOWN)
+
+    async def classify_node(state: AfterSalesState) -> dict[str, Any]:
+        message = _last_user_message(state)
+        explicit = extract_context(message)
         resuming = (
             bool(state.get("missing_fields"))
             and bool(explicit.goodsid or explicit.sales_channel)
             and not link_cancelled(message)
-            and not any(
-                term in message.lower()
-                for term in (
-                    "购买",
-                    "我要买",
-                    "我想买",
-                    "申请",
-                    "入口",
-                    "链接",
-                    "保修",
-                    "故障",
-                    "维修",
-                    "warranty",
-                    "repair",
-                )
-            )
+            and not any(term in message.lower() for term in RESUME_BLOCK_TERMS)
         )
         if resuming:
-            intent = state.get("intent", Intent.GENERAL)
+            # 补充品类/渠道时沿用上一轮的路由结果，不重新分类。
+            route = {
+                key: state.get(key)
+                for key in (
+                    "route_layer",
+                    "intent",
+                    "route_target",
+                    "faq_group_id",
+                    "faq_item_id",
+                    "route_score",
+                )
+            }
+        else:
+            route = await route_turn(state, message)
         return _step(
             state,
-            intent=str(intent),
+            **route,
+            faq_candidates=[],
             market=Market.CN.value,
-            language=state.get("language") or str(decision.language or "zh-CN"),
+            language=state.get("language") or str(explicit.language or "zh-CN"),
             goodsid=explicit.goodsid or state.get("goodsid"),
             sales_channel=explicit.sales_channel or state.get("sales_channel"),
             product_model=explicit.product_model or state.get("product_model"),
-            issue_summary=state.get("issue_summary")
-            if resuming
-            else issue_summary(message),
+            issue_summary=(
+                state.get("issue_summary") if resuming else issue_summary(message)
+            ),
+            reply=None,
+            policy_evidence=[],
+            citations=[],
+            action_links=[],
+            human_required=False,
+            human_reason=None,
             missing_fields=[],
             phase=AgentPhase.AI_ACTIVE.value,
             conversation_status=ConversationStatus.AI_ACTIVE.value,
@@ -119,20 +217,48 @@ def build_graph(
             phase=AgentPhase.COLLECTING_INFO.value,
         )
 
+    def _resolve_faq(state: AfterSalesState):
+        """L2 第 4-6 步：组内检索 → 聚合/分差 → Redis 取答案 → 适用性审查。返回 (evidence, 候选)。"""
+
+        message = _last_user_message(state)
+        if policy_store.is_unsupported(message):
+            return None, ()
+        goodsid, channel = state.get("goodsid"), state.get("sales_channel")
+        item_id, score = state.get("faq_item_id"), state.get("route_score") or 1.0
+        if not item_id:
+            match = policy_store.match_faq(
+                state.get("issue_summary") or message,
+                state.get("faq_group_id"),
+                goodsid,
+                channel,
+            )
+            if match.candidates:
+                return None, match.candidates
+            if match.item is None:
+                return None, ()
+            item_id, score = match.item.faq_item_id, match.score
+        return policy_store.answer(item_id, goodsid, channel, score), ()
+
     async def retrieve_policy_node(state: AfterSalesState) -> dict[str, Any]:
         try:
-            evidence = await asyncio.to_thread(
-                policy_store.retrieve,
-                state.get("issue_summary") or _last_user_message(state),
-                Market.CN,
-                top_k=3,
-                goodsid=state.get("goodsid"),
-                sales_channel=state.get("sales_channel"),
-            )
+            evidence, candidates = await asyncio.to_thread(_resolve_faq, state)
         except Exception as exc:
-            logger.warning("政策检索不可用: type=%s", type(exc).__name__)
-            evidence = []
-        if not evidence:
+            logger.warning("知识检索不可用: type=%s", type(exc).__name__)
+            evidence, candidates = None, ()
+        if candidates and state.get("intent") not in SOP_INTENTS:
+            # 分差过小：交互选择，下一轮用户回复序号即确定 faq_item_id。
+            options = "\n".join(
+                f"{index + 1}. {policy_store.standard_question(item)}"
+                for index, item in enumerate(candidates)
+            )
+            return _step(
+                state,
+                faq_candidates=list(candidates),
+                reply="你想咨询的是以下哪个问题？请回复序号：\n" + options,
+                result_type="CLARIFICATION",
+                phase=AgentPhase.COLLECTING_INFO.value,
+            )
+        if evidence is None:
             return _step(
                 state,
                 policy_evidence=[],
@@ -142,12 +268,28 @@ def build_graph(
                 phase=AgentPhase.AI_CANNOT_RESOLVE.value,
                 conversation_status=ConversationStatus.AI_CANNOT_RESOLVE.value,
             )
+        payload = evidence.model_dump(mode="json")
+        if state.get("route_layer") == RouteLayer.L1_REDIS_EXACT and state.get(
+            "faq_item_id"
+        ):
+            payload["score_kind"] = "exact_match"
         return _step(
             state,
-            policy_evidence=[item.model_dump(mode="json") for item in evidence],
-            citations=[item.model_dump(mode="json") for item in evidence],
+            faq_item_id=evidence.faq_item_id,
+            policy_evidence=[payload],
+            citations=[payload],
             result_type="ANSWER",
             phase=AgentPhase.RETRIEVING_POLICY.value,
+        )
+
+    async def unknown_node(state: AfterSalesState) -> dict[str, Any]:
+        """第 3 层兜底：UNKNOWN 固定话术，不让模型自由生成答案。"""
+
+        return _step(
+            state,
+            reply=UNKNOWN_REPLY,
+            result_type="UNKNOWN",
+            phase=AgentPhase.COMPLETED.value,
         )
 
     async def resolve_link_node(state: AfterSalesState) -> dict[str, Any]:
@@ -180,31 +322,11 @@ def build_graph(
         if not reply and state.get("human_required"):
             reply = f"暂时无法给出可靠的政策结论：{state.get('human_reason')}。请联系官方客服继续处理。"
         if not reply and state.get("policy_evidence"):
-            evidence = state["policy_evidence"][0]
-            lines = [
-                line.lstrip("- ")
-                for line in evidence["excerpt"].splitlines()
-                if line.startswith("- ")
-            ]
-            terms = (
-                ("无法开机排查", "Cannot power on:")
-                if state.get("intent") == Intent.TROUBLESHOOTING
-                else ("申请维修", "Repair request:")
-                if "材料" in _last_user_message(state)
-                else ("有限保修期", "Limited warranty:")
-            )
-            selected = [line for line in lines if any(term in line for term in terms)]
-            if state.get("language") == "zh-CN" and any(
-                any("\u4e00" <= char <= "\u9fff" for char in line) for line in selected
-            ):
-                selected = [
-                    line
-                    for line in selected
-                    if any("\u4e00" <= char <= "\u9fff" for char in line)
-                ]
+            # 答案变体已是单条款，直接按政策原文输出，不做模型改写。
+            evidence = state.get("policy_evidence", [])[0]
             reply = (
                 f"根据{evidence['title']}（版本 {evidence['version']}），政策原文如下：\n"
-                + "\n".join(selected or lines or [evidence["excerpt"]])
+                + evidence["excerpt"]
             )
         links = state.get("action_links", [])
         if links:
@@ -240,16 +362,16 @@ def build_graph(
             Intent.REPAIR_STATUS,
         }:
             message = _last_user_message(state).lower()
-            if all(
-                state.get(key) for key in ("goodsid", "sales_channel")
-            ) and any(term.lower() in message for term in FAQ_TERMS):
+            if all(state.get(key) for key in ("goodsid", "sales_channel")) and any(
+                term.lower() in message for term in FAQ_TERMS
+            ):
                 return "retrieve_policy"
             return "resolve_link"
-        if intent in {Intent.FAQ, Intent.TROUBLESHOOTING}:
+        if intent in FAQ_INTENTS:
             if policy_store.is_unsupported(_last_user_message(state)):
                 return "retrieve_policy"
             return "collect_info" if _missing_fields(state) else "retrieve_policy"
-        return "render_response"
+        return "unknown"
 
     graph = StateGraph(AfterSalesState)
 
@@ -266,6 +388,7 @@ def build_graph(
         ("collect_info", collect_info_node),
         ("retrieve_policy", retrieve_policy_node),
         ("resolve_link", resolve_link_node),
+        ("unknown", unknown_node),
         ("render_response", render_response_node),
     ):
         graph.add_node(name, bounded(node))
@@ -274,13 +397,10 @@ def build_graph(
     graph.add_conditional_edges(
         "retrieve_policy",
         lambda state: (
-            "resolve_link"
-            if state.get("intent")
-            in {Intent.PURCHASE_LINK, Intent.AFTERSALES_LINK, Intent.REPAIR_STATUS}
-            else "render_response"
+            "resolve_link" if state.get("intent") in SOP_INTENTS else "render_response"
         ),
     )
-    for name in ("collect_info", "resolve_link"):
+    for name in ("collect_info", "resolve_link", "unknown"):
         graph.add_edge(name, "render_response")
     graph.add_edge("render_response", END)
     return graph.compile(checkpointer=checkpointer or MemorySaver())

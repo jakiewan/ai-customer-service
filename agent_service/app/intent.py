@@ -79,7 +79,16 @@ FAQ_TERMS = (
     "免费",
     "材料",
 )
-LINK_CANCEL_TERMS = ("不要申请", "不想维修", "取消维修", "取消申请", "不申请", "do not want", "don't want", "cancel my repair")
+LINK_CANCEL_TERMS = (
+    "不要申请",
+    "不想维修",
+    "取消维修",
+    "取消申请",
+    "不申请",
+    "do not want",
+    "don't want",
+    "cancel my repair",
+)
 
 
 @dataclass(frozen=True)
@@ -107,34 +116,71 @@ def classify_intent(text: str) -> Intent:
             return Intent.FAQ
         if _contains(text, TROUBLESHOOTING_TERMS):
             return Intent.TROUBLESHOOTING
-        return Intent.GENERAL
+        return Intent.UNKNOWN
     if _contains(text, HIGH_RISK_TERMS):
         return Intent.FAQ
     if _contains(text, STATUS_TERMS):
         return Intent.REPAIR_STATUS
-    if _contains(text, ("我要买", "我想买", "在哪买", "哪里买", "购买链接", "商城", "官网商城", "where to buy", "purchase link", "buy now")):
+    if _contains(
+        text,
+        (
+            "我要买",
+            "我想买",
+            "在哪买",
+            "哪里买",
+            "购买链接",
+            "商城",
+            "官网商城",
+            "where to buy",
+            "purchase link",
+            "buy now",
+        ),
+    ):
         return Intent.PURCHASE_LINK
     if _contains(text, AFTERSALES_TERMS):
-        if _contains(text, ("需要什么", "哪些材料", "材料", "条件", "多久", "免费", "what documents", "requirements")) and not _contains(text, ("入口", "链接", "url", "link")):
+        if _contains(
+            text,
+            (
+                "需要什么",
+                "哪些材料",
+                "材料",
+                "条件",
+                "多久",
+                "免费",
+                "what documents",
+                "requirements",
+            ),
+        ) and not _contains(text, ("入口", "链接", "url", "link")):
             return Intent.FAQ
         return Intent.AFTERSALES_LINK
     if _contains(text, FAQ_TERMS):
         return Intent.FAQ
     if _contains(text, TROUBLESHOOTING_TERMS):
         return Intent.TROUBLESHOOTING
-    return Intent.GENERAL
+    return Intent.UNKNOWN
 
 
 def link_cancelled(text: str) -> bool:
     # 否定与申请动作之间允许短修饰语，但不跨句匹配，避免误伤后续明确申请。
-    return _contains(text, LINK_CANCEL_TERMS) or bool(re.search(
-        r"(?:不要|不想|不打算|不需要|不愿|暂不|先别|别)[^，。！？,.;!?]{0,8}"
-        r"(?:申请(?:售后)?维修|申请售后|报修|送修)", text
-    )) or bool(re.search(
-        r"\b(?:do\s+not|don't|not|never|would\s+not|wouldn't)\s+"
-        r"(?:(?:want|like|intend|ask|asking|you|to|help|me|submit|create|make|send|apply|for|a|any)\s+){0,6}"
-        r"(?:repair\s+request|after-sales\s+service|send\s+it\s+for\s+repair)\b", text, re.IGNORECASE
-    ))
+    return (
+        _contains(text, LINK_CANCEL_TERMS)
+        or bool(
+            re.search(
+                r"(?:不要|不想|不打算|不需要|不愿|暂不|先别|别)[^，。！？,.;!?]{0,8}"
+                r"(?:申请(?:售后)?维修|申请售后|报修|送修)",
+                text,
+            )
+        )
+        or bool(
+            re.search(
+                r"\b(?:do\s+not|don't|not|never|would\s+not|wouldn't)\s+"
+                r"(?:(?:want|like|intend|ask|asking|you|to|help|me|submit|create|make|send|apply|for|a|any)\s+){0,6}"
+                r"(?:repair\s+request|after-sales\s+service|send\s+it\s+for\s+repair)\b",
+                text,
+                re.IGNORECASE,
+            )
+        )
+    )
 
 
 def _first_match(patterns: tuple[str, ...], text: str) -> str | None:
@@ -166,14 +212,31 @@ def extract_context(text: str) -> ExtractedContext:
 
     lowered = text.lower()
     language_text = re.sub(r"\b(?:ord|sn)-[a-z0-9-]+\b", "", lowered)
-    language = Language.EN if re.search(r"\b(the|what|how|my|repair)\b", language_text) else Language.ZH_CN
-    issue_category = "cannot_power_on" if _contains(text, POWER_TROUBLESHOOTING_TERMS) else "general_issue"
+    language = (
+        Language.EN
+        if re.search(r"\b(the|what|how|my|repair)\b", language_text)
+        else Language.ZH_CN
+    )
+    issue_category = (
+        "cannot_power_on"
+        if _contains(text, POWER_TROUBLESHOOTING_TERMS)
+        else "general_issue"
+    )
     goodsid = _first_match((r"(?:goodsid|三级品类|品类)\s*[:：=]?\s*(\d{5})\b",), text)
     if text.strip() in CATEGORY_NAMES:
         goodsid = text.strip()
     if goodsid is None:
-        goodsid = next((key for key, name in CATEGORY_NAMES.items() if name in text), None)
-    sales_channel = next((key for key, name in SALES_CHANNEL_NAMES.items() if name in text or key in text.upper().split()), None)
+        goodsid = next(
+            (key for key, name in CATEGORY_NAMES.items() if name in text), None
+        )
+    sales_channel = next(
+        (
+            key
+            for key, name in SALES_CHANNEL_NAMES.items()
+            if name in text or key in text.upper().split()
+        ),
+        None,
+    )
     return ExtractedContext(
         order_id=order_id,
         serial_number=serial_number,

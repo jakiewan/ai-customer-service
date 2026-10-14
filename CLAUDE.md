@@ -1,164 +1,122 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+本文件说明当前工作区的开发与核对规则。用户偏好中文；技术术语和代码标识符保留英文。
 
-> 全局语言规则：用户偏好中文，所有 thinking 与对外回复统一使用中文（技术术语、代码标识符、第三方工具名保留英文）。见 `~/.claude/CLAUDE.md`。
+> 核对日期：2026-10-15。当前行为以源码为准；完整说明见[技术方案](技术方案.md)和[当前业务流程](当前项目业务逻辑-从用户输入到回复.md)。当前工作区包含未提交代码，不能只按 HEAD 判断实现。
 
-## 当前业务契约（2026-10-14 更新，优先于历史章节）
+## 当前业务契约
 
-GlobalCare 商品与售后咨询 Agent。仅服务中国大陆，`market` 内部固定为 `CN`，用户不选择或补充国家；`goodsid`（三级品类 ID）和 `sales_channel` 是政策适用性的两个过滤维度，SKU/型号/地区/日期不参与政策过滤。当前客服不调用个人业务工具；购买/申请通过固定 URL 引导，用户在官方页面办理。入口 URL 来自环境配置，不由模型生成。
+- 商品与售后咨询 Agent，仅服务中国大陆，`market` 固定 CN，不识别或追问国家。
+- `goodsid` 表示三级品类；政策按固定 CN + `goodsid` + `sales_channel` 匹配。型号、SKU、地区、日期不参与政策过滤。
+- 网页/API、文本抽取和已有状态提供品类、渠道；缺失时当前代码仍追问。可信订单上下文自动关联属于后续设计。
+- 保修/排查输出已匹配 FAQ 的政策原文；购买、申请售后和维修进度通过已配置 URL 导航，用户在官方页面办理。
+- 当前聊天图不查询个人订单、设备或实时维修状态，不创建受理草稿，不执行业务写入。
+- 真实模型只在 L3 辅助结构化意图分类，不生成最终答案或 URL。
 
-路由架构采用四层漏斗：第 0 层硬编码规则（SOP 操作类）→ 第 1 层 Redis 精确匹配（FAQ hash）→ 第 2 层 Milvus 语义检索（`intent_corpus` + `faq_question` collection）→ 第 3 层 LLM 兜底 + `UNKNOWN` 固定话术。
+## 当前组件与数据职责
 
-知识检索走 Milvus（`milvus-standalone`，端口 19530，database `ai_customer_service`）；Redis 做第 1 层 FAQ 精确匹配和答案变体存储（端口 56379，项目 compose 管理）；PostgreSQL 保留会话/消息/审计/锁和 LangGraph checkpoint，不再承担向量检索。`policy_documents` 表已通过迁移脚本 DROP。
+当前六节点：`classify_intent`、`collect_info`、`retrieve_policy`、`resolve_link`、`unknown`、`render_response`。
 
-下列章节为历史运行说明，旧草稿路径不再生效；当前命令与范围见 README.md 和技术方案.md。
-
-## 常用命令
-
-> 默认 Python 环境: `/opt/anaconda3/envs/ai-base/bin/python`（`ai-base` conda env）。
-
-### 安装与基础设施
-
-```bash
-/opt/anaconda3/envs/ai-base/bin/python -m pip install -r requirements.txt
-docker compose up -d                                          # 启动 PostgreSQL(55432) + Redis(56379) 容器;Milvus 复用 milvus-standalone
-export GLOBALCARE_DATABASE_URL='postgresql+psycopg://postgres:postgres@127.0.0.1:55432/globalcare_agent'
-PYTHONPATH=. /opt/anaconda3/envs/ai-base/bin/python scripts/init_postgres.py
-PYTHONPATH=. /opt/anaconda3/envs/ai-base/bin/python scripts/seed_milvus_redis.py  # 写入 Milvus + Redis
+```text
+Vue → FastAPI → ConversationService → LangGraph
+                                   ├─ KnowledgeStore → Redis / Milvus
+                                   ├─ AgentModel（L3 分类）
+                                   └─ 固定入口配置
+会话、消息、审计、幂等结果 → InMemoryStore / PostgresStore
+图 checkpoint → MemorySaver / AsyncPostgresSaver
+独立 MCP → Mock / HTTP 只读业务网关（当前聊天图不调用）
 ```
 
-### 启动三个服务（按顺序）
+- L0：规则 SOP 路由及不支持范围判断。
+- L1：标准问/相似问归一化 hash 精确匹配，得到 `intent_id / faq_group_id / faq_item_id`。
+- L2：意图语料检索、按意图聚合、FAQ 组内检索、分差判断、答案变体适用性复核。
+- L3：前三层未确定时由模型分类；无法确定则 `UNKNOWN` 固定话术。FAQ 关键词还可在 L2 未命中后提供规则方向。
+- Milvus：`intent_corpus` 和 `faq_question`，默认 database `ai_customer_service`。
+- Redis：`gc:faq:*` 精确索引、答案版本指针和答案变体。
+- PostgreSQL：会话、消息、审计、请求指纹/结果与 checkpoint，不承担当前知识检索。
+
+## 目录地图
+
+| 路径 | 当前职责 |
+| --- | --- |
+| `agent_service/app/main.py` | FastAPI 接口、装配、readiness |
+| `agent_service/app/graph.py` | 六节点图、四层路由、跨轮补条件、回复 |
+| `agent_service/app/knowledge_base.py` | `KnowledgeStore`、Embedding、检索、答案审查、探测 |
+| `agent_service/app/faq_catalog.py` | FAQ 目录与政策条款合成、hash/Redis key |
+| `agent_service/data/faq/faq_catalog.yaml` | 意图语料、标准问、相似问、条款映射 |
+| `agent_service/data/policies/*.md` | 中国大陆手机三渠道模拟政策源 |
+| `agent_service/app/service.py` | 会话锁、幂等、SSE、审计、保存结果 |
+| `agent_service/app/store.py`、`postgres_store.py` | 会话和消息级结果存储 |
+| `agent_service/app/checkpointer.py` | 独立配置图 checkpoint |
+| `agent_service/app/model_factory.py`、`intent.py` | 结构化意图与确定性分类/抽取 |
+| `agent_service/mcp_server.py`、`app/business.py` | 独立只读工具及网关 |
+| `agent_service/migrations/` | 会话/审计迁移；005 删除旧模拟政策表 |
+| `scripts/seed_milvus_redis.py` | Milvus 两个 collection 与 Redis 数据初始化 |
+| `frontend/index.html` | Vue 3 CDN 单页，POST + fetch 消费 SSE |
+| `diagram/` | 图示资产；部分为历史快照，使用前查看对应说明 |
+
+旧政策检索模块和旧 seed 脚本已经退出当前工作区。`domain_service/` 当前不存在；不得把历史 Java 路径写成当前可运行服务。
+
+## 配置
+
+配置权威来源是 `agent_service/app/config.py`。`.env.example` 仍有旧 Embedding 配置，使用时显式覆盖。
+
+| 环境变量 | 代码默认值 | 用途 |
+| --- | --- | --- |
+| `GLOBALCARE_LLM_MODE` | mock | mock / minimax 分类 |
+| `GLOBALCARE_EMBEDDING_MODE` | hash | 离线 hash / HuggingFace |
+| `GLOBALCARE_EMBEDDING_MODEL` | BAAI/bge-m3 | 语义模型，代码固定 CPU |
+| `GLOBALCARE_EMBEDDING_DIMENSIONS` | 1024 | 建库与查询维度一致 |
+| `GLOBALCARE_POLICY_BACKEND` | memory | memory / milvus |
+| `GLOBALCARE_POLICY_ALLOW_FALLBACK` | true | 是否允许知识后端降级 |
+| `GLOBALCARE_MILVUS_URI` | http://127.0.0.1:19530 | 独立 Milvus |
+| `GLOBALCARE_MILVUS_DB` | ai_customer_service | Milvus database |
+| `GLOBALCARE_REDIS_URL` | redis://127.0.0.1:56379/0 | compose 的 Redis |
+| `GLOBALCARE_PERSISTENCE_MODE` | memory | 会话 Store |
+| `GLOBALCARE_CHECKPOINTER_MODE` | memory | 图 checkpoint，需另行设置 |
+| `GLOBALCARE_DATABASE_URL` | 本机 5432/globalcare_agent | compose 实际暴露 55432，需覆盖 |
+| `GLOBALCARE_PURCHASE_URL` / `GLOBALCARE_AFTERSALES_URL` | 空 | 业务确认的 HTTPS 入口 |
+| `GLOBALCARE_AUTH_MODE` | demo | 本地共享凭证 / JWT |
+| `GLOBALCARE_MAX_GRAPH_STEPS` | 12 | 节点执行上限 |
+| `GLOBALCARE_TOKEN_BUDGET` | 4096 | 图输入消息字符数粗估 |
+| `GLOBALCARE_AGENT_RUN_TIMEOUT_SECONDS` | 60 | 单轮总超时 |
+| `GLOBALCARE_MESSAGE_LOCK_TIMEOUT_SECONDS` | 5 | 会话锁等待 |
+| `GLOBALCARE_MAX_ACTIVE_RUNS` | 8 | 服务实例内活跃运行上限 |
+
+`policy_top_k=3` 仍保留在配置类，但当前 FAQ 检索未使用；Milvus search 固定 limit=10，最终取一条答案或两个澄清候选。`max_tool_calls` 也不是当前六节点图的执行门禁，因为图不调用业务工具。
+
+## 运行与验证
+
+离线启动、真实知识后端初始化命令见[README](README.md)，验证记录见[测试说明与报告](测试说明与报告.md)。
 
 ```bash
-# 1) Spring Boot 模拟业务（端口 8081）
-cd domain_service && mvn -Dmaven.repo.local=.mvn/repository spring-boot:run
-
-# 2) FastMCP 工具服务（端口 8001,streamable-http）
-PYTHONPATH=. /opt/anaconda3/envs/ai-base/bin/python -m agent_service.mcp_server
-
-# 3) FastAPI Agent（端口 8000）
-export GLOBALCARE_LLM_MODE=mock
-export GLOBALCARE_BUSINESS_MODE=http
-export GLOBALCARE_MCP_MODE=http
-export GLOBALCARE_POLICY_BACKEND=milvus
-export GLOBALCARE_CHECKPOINTER_MODE=postgres
-export GLOBALCARE_DATABASE_URL='postgresql+psycopg://postgres:postgres@127.0.0.1:55432/globalcare_agent'
-export GLOBALCARE_REDIS_URL='redis://127.0.0.1:56379/0'
-export GLOBALCARE_MILVUS_URI='http://127.0.0.1:19530'
-export GLOBALCARE_MILVUS_DB='ai_customer_service'
-export GLOBALCARE_BUSINESS_BASE_URL='http://127.0.0.1:8081'
-export GLOBALCARE_MCP_URL='http://127.0.0.1:8001/mcp'
-export GLOBALCARE_DEMO_TOKEN='globalcare-demo-token'
 PYTHONPATH=. /opt/anaconda3/envs/ai-base/bin/python -m uvicorn agent_service.app.main:app --host 127.0.0.1 --port 8000
-
-# 4) Vue 静态页面（端口 4173）
-cd frontend && python3 -m http.server 4173 --bind 127.0.0.1
+(cd frontend && python3 -m http.server 4173 --bind 127.0.0.1)
+PYTHONPATH=. /opt/anaconda3/envs/ai-base/bin/python -m pytest -q agent_service/tests --ignore=agent_service/tests/test_postgres_conversations.py --ignore=agent_service/tests/test_fault_recovery.py
+/opt/anaconda3/envs/ai-base/bin/python -m compileall -q agent_service
+git diff --check
 ```
 
-### 测试
+全量 pytest 中两个数据库相关模块需要独立测试库，会执行 SQL 迁移，不能指向业务库。无需为文档同步执行数据库初始化或 seed。
 
-```bash
-# 离线单元与 API 契约测试（不需要外部服务）
-PYTHONPATH=. /opt/anaconda3/envs/ai-base/bin/python -m pytest -q agent_service/tests
+## 安全与可靠性边界
 
-# 单文件 / 单用例
-PYTHONPATH=. /opt/anaconda3/envs/ai-base/bin/python -m pytest -q agent_service/tests/test_intent_and_policy.py
+- MCP 白名单只有 `query_order`、`query_device`、`query_repair_status`；`permissions.py` 只定义模型只读工具校验。当前图没有应用写入节点。
+- 非空入口 URL 必须为有主机名、无内嵌凭证的 HTTPS 地址；官方域名由业务配置确认。
+- 会话身份校验与消息指纹绑定必须保留。相同会话的同 ID/同请求完成后重放，不同请求冲突，已登记且无确定结果不盲目重跑。
+- 内存会话锁只在进程内有效；PostgreSQL Store 使用 advisory lock。活跃运行上限不是集群限流。
+- 资料加载检查 CN、品类、渠道、版本、标识、语言和内容，以及品类×渠道唯一性。预发/生产要求源资料 approved 且非 simulated；返回答案再次复核适用条件。
+- 预发/生产要求 JWT、PostgreSQL Store/checkpoint、Milvus、HuggingFace、禁止 fallback、真实模型及相关 HTTPS/凭证条件。配置通过不代表真实服务或生产效果已验收。
+- `/readyz` 返回 store/postgres/milvus/redis/knowledge_backend/model_config；memory 知识后端如实标 degraded，MCP 不是当前客服 readiness 依赖。
+- 状态、证据事件可能在保存前发出；最终正文分块和成功 done 在保存结果后发出。SSE HTTP 200 不代表业务成功。
+- `human_required` 只是人工服务提示，没有坐席转接或审批恢复。
 
-# Spring Boot 单元测试
-cd domain_service && mvn -Dmaven.repo.local=.mvn/repository clean test
+## 已知边界与维护规则
 
-# 三服务启动后端到端 smoke（FastAPI → LangGraph → MCP → Spring Boot）
-PYTHONPATH=. /opt/anaconda3/envs/ai-base/bin/python scripts/http_e2e_smoke.py
-```
-
-### Lint / 格式化
-
-仓库未集成 ruff/black;`.ruff_cache/` 仅用于 IDE 缓存。Python 风格遵循 PEP 8 + 中英混合注释（中文 `#` 注释,代码标识符英文）。
-
-## 架构总览
-
-```
-浏览器 Vue 3 (SSE 消费)
-        │
-        ▼
-FastAPI (agent_service/app/main.py)
-   ├─ ConversationService (service.py)   ← SSE 事件编排 + 审计
-   ├─ LangGraph GraphService (graph.py)  ← 四层漏斗路由 + 步骤/Token 预算
-   │     └─ classify_intent → [L0 规则 → L1 Redis → L2 Milvus → L3 LLM/UNKNOWN]
-   │           → collect_info → retrieve_policy → resolve_link → render_response → END
-   ├─ KnowledgeStore (policy_store.py)   ← Milvus 语义检索 + Redis 精确匹配
-   ├─ BusinessGateway (business.py)      ← Mock / Http / Mcp 三种实现
-   └─ InMemoryStore (store.py)           ← 会话/审计(可替换为 Postgres)
-        │
-        ├─ Milvus (ai_customer_service)  ← intent_corpus + faq_question (BGE-M3 1024 维)
-        ├─ Redis (56379)                 ← FAQ hash 精确匹配 + 答案变体
-        └─ PostgreSQL (55432)            ← 会话/消息/审计/checkpoint
-        │
-        ▼
-FastMCP (mcp_server.py)                 ← 仅暴露 query_order/query_device/query_repair_status
-        │
-        ▼
-Spring Boot (domain_service)             ← /internal/* 模拟业务接口
-```
-
-### 关键边界（务必遵守）
-
-- **模型工具白名单**：`ALLOWED_MODEL_TOOLS = {query_order, query_device, query_repair_status}`。`create_case_draft` **不属于**模型工具,通过 `assert_application_write_allowed` 在 `graph.create_case_draft_node` 中显式调用。任何把写入工具暴露给 LLM 的改动都会破坏安全底座。
-- **离线路由优先**：意图识别 `intent.classify_intent` 是确定性规则,LLM(`GLOBALCARE_LLM_MODE=minimax`)只在 `model_factory.AgentModel.classify` 中作为增强层,失败必须回退离线,否则 CI 会挂。
-- **Case Draft 幂等**：`business.draft_fingerprint` 基于 (conversation_id, market, issue_category, issue_summary, order_id, serial_number, suggested_resolution) 做 SHA256;`MockBusinessGateway` / `HttpBusinessGateway` / Spring Boot `DomainService.createCaseDraft` 三端必须保持相同去重语义。
-- **适用性隔离**：Milvus 检索按 `goodsid` + `sales_channel` 标量过滤，且硬编码 `UNSUPPORTED_PRODUCT_TERMS`(智能手表/耳机/笔记本等);若查询命中退换/赔偿/支付等 `UNSUPPORTED_POLICY_TERMS` 直接返回空证据 → 进入 `human_required`。
-- **步骤预算**：`max_graph_steps=12`、`token_budget=4096`、`max_tool_calls=3`;`GraphService.stream` 内会硬性抛 `AgentRunError` / `AgentBudgetError`,SSE 翻译为 `error` 事件。
-- **幂等消息**：`MessageRequest.client_message_id` 同值时 `InMemoryStore.append_user_message` 返回上次结果并走 `_replay_result`,不再重跑图。
-- **审计口径**：`TOOL_CALL` / `POLICY_EVIDENCE` / `CASE_DRAFT_CREATED` / `GRAPH_NODE_COMPLETED` / `AGENT_RUN_COMPLETED` 等事件类型在 `service.py` 中固定;`GET /api/v1/conversations/{id}/audit` 返回全部事件。
-
-## 目录地图（仅说明关注点）
-
-- `agent_service/app/` — Python 主代码,文件名即模块职责（`graph`/`intent`/`policy_store`/`business`/`permissions`/`checkpointer`/`state`/`schemas`/`model_factory`/`service`/`store`/`main`/`config`/`constants`）。
-- `agent_service/mcp_server.py` — FastMCP 入口;`python -m agent_service.mcp_server` 启动 streamable-http。
-- `agent_service/data/policies/policy_{cn,my}.md` — 含 YAML frontmatter (`policy_id`/`title`/`market`/`language`/`version`),PolicyStore 读取时解析为 `Document`。
-- `agent_service/migrations/001_init.sql` — `conversations` / `conversation_messages` / `case_drafts` / `agent_audit_events`;`policy_documents` 表已从 001 移除,存量库由 `005_drop_policy_documents.sql` DROP;LangGraph checkpoint 表由 `AsyncPostgresSaver.setup()` 创建。
-- `agent_service/tests/` — 覆盖 intent/policy、graph flow、API 契约、模型工厂、权限等关键行为;测试保持精简,不维护回归矩阵。
-- `domain_service/src/main/java/com/globalcare/domain/` — Spring Boot 包结构 `api/DomainController` + `service/DomainService` + `model/*`(record 类)。
-- `frontend/index.html` — Vue 3 CDN 单文件;真实 SSE 消费,右侧 trace/policy/draft 三张卡片。
-- `scripts/` — `init_postgres.py` / `seed_milvus_redis.py` / `http_e2e_smoke.py`。
-- `diagram/*.svg` — 项目已生成资产:思维导图、后端架构、Case Draft 时序。
-- 顶层 `.md` 资料:`技术方案.md`(架构权威来源) / `需求分析报告.md` / `开发执行状态.md` / `测试说明与报告.md` / `测试用例清单.md` / `SDD缺口清单.md` / `面试话术.md`。**架构改动前先翻 `技术方案.md`,再翻 `SDD缺口清单.md` 是否会触发新缺口**。
-
-## 配置矩阵（`agent_service/app/config.py`）
-
-| 环境变量 | 默认 | 用途 |
-|---|---|---|
-| `GLOBALCARE_LLM_MODE` | `mock` | `mock` = 离线路由;`minimax` = 真实 `MiniMax-M3`(需 `MINIMAX_*`) |
-| `GLOBALCARE_EMBEDDING_MODE` | `hash` | `hash` 确定性离线;`huggingface` = 本地 BGE-M3(已缓存) |
-| `GLOBALCARE_EMBEDDING_MODEL` | `BAAI/bge-m3` | 走 `sentence_transformers` 加载 dense 向量 |
-| `GLOBALCARE_EMBEDDING_DIMENSIONS` | `1024` | BGE-M3 输出 1024 维;离线 hash 模式同样按此维度生成 |
-| `GLOBALCARE_POLICY_BACKEND` | `memory` | `milvus` = Milvus 语义检索;`memory` = 内存向量(离线) |
-| `GLOBALCARE_MILVUS_URI` | `http://127.0.0.1:19530` | Milvus standalone 地址 |
-| `GLOBALCARE_MILVUS_DB` | `ai_customer_service` | Milvus database 名 |
-| `GLOBALCARE_REDIS_URL` | `redis://127.0.0.1:56379/0` | 第 1 层 FAQ 精确匹配 + 答案变体 |
-| `GLOBALCARE_CHECKPOINTER_MODE` | `memory` | `postgres` = LangGraph `AsyncPostgresSaver` |
-| `GLOBALCARE_BUSINESS_MODE` | `mock` | `http` = Spring Boot / `mcp` = FastMCP |
-| `GLOBALCARE_MCP_MODE` | `mock` | `http` / `streamable_http` 触发 `MultiServerMCPClient` |
-| `GLOBALCARE_DATABASE_URL` | `postgresql+psycopg://...:5432/globalcare_agent` | 实际默认端口已被 docker-compose 改为 55432 |
-| `GLOBALCARE_DEMO_TOKEN` | `globalcare-demo-token` | 通过 `X-Demo-Token` Header 鉴权,缺失/错误返回 401 |
-| `GLOBALCARE_CORS_ORIGINS` | 包含 `null` | 本地 file:// 兼容;生产环境需覆盖为明确 HTTPS |
-
-## 排错速查
-
-- **`/readyz` 显示 `milvus: down` 或 `redis: down`** → 检查 `milvus-standalone` 和项目 Redis 容器是否运行;`seed_milvus_redis.py` 未跑会导致检索空结果。
-- **`mcp: down`** → FastMCP 进程未起或端口被占;`MultiServerMCPClient` 不会重试。
-- **Case Draft 重复创建** → 检查 `draft_fingerprint` 字段是否在请求体;Spring Boot `draftsByFingerprint` 是同进程 map,重启即丢失。
-- **草稿市场与对话不一致** → 业务事实的 `market` 字段优先级高于用户声明,`graph.query_business_node` 会触发 `MARKET_MISMATCH` 拒绝路径。
-- **离线意图路由命中 FAQ 但期望 TROUBLESHOOTING** → 检查文本是否包含 `UNSUPPORTED_POLICY_TERMS`(退款/退货/换机/赔偿等),`intent.classify_intent` 会**强制降级**为 FAQ。
-- **pytest 跑通但服务启动失败** → 多半是 `pydantic_settings` 在 `.env` 中读取了旧值;启动前显式 `export` 环境变量覆盖。
-
-## 知识资产与已知风险
-
-- `.learnings/LEARNINGS.md` — 工作区级自我改进日志,按 `[LRN-YYYYMMDD-NNN]` 编号;架构、幂等或一致性改动前先扫一遍 `Status: pending` 条目,避免重复踩坑。
-- `.learnings/ERRORS.md` — 已记录的命令/集成错误与解决方案。
-
-**关键 pending 风险**(不要据此声称已生产级):
-
-- `LRN-20260901-001` — **消息级幂等存在并发缺口**。`InMemoryStore.append_user_message` 在处理完成才写结果,同会话并发 5 次同 `client_message_id` 会重复执行完整图并发出重复 `case_draft_created`(下游 `draft_fingerprint` 仍去重,数据层正确但事件/Token 浪费)。本文件"幂等消息"段仅描述单线程视角,生产化前需补 single-flight 或原子 PROCESSING/SUCCEEDED 状态。
-- `LRN-20260830-006` — **RAG 拒答门禁依赖负例覆盖**。新增产品类型时,必须补正例 + 高风险负例(退款/退货/换机/赔偿等 `UNSUPPORTED_POLICY_TERMS`)+ 非支持产品负例(`UNSUPPORTED_PRODUCT_TERMS`),并用真实 Milvus 跑一遍,不能只测内存 VectorStore。
+- `RESUME_BLOCK_TERMS` 是补条件时阻止沿用旧路由的关键词；不是通用上下文理解。词表遗漏可能把新购买诉求续接为旧政策问题。
+- 文本品类/渠道和页面选择可能不同步；下一轮页面再次提交的值可能覆盖此前文本条件。
+- 当前只保留最近 20 条 checkpoint 消息；完整消息由 Store 保存。
+- 图预算为输入字符粗估，不是实际模型和检索 token 账本。
+- `PolicyEvidence` 仍接受历史 `pgvector` / `token_overlap_heuristic` 引用以读取旧消息；不表示当前后端仍提供该检索路径。compose 的旧镜像及迁移仍带 vector 扩展。
+- 历史图、旧测试次数和旧验证截图不能当作当前运行证据。
+- 按最小修改原则工作；架构调整前核对 `技术方案.md` 与 `SDD缺口清单.md`。本次文档同步不改变上述实现或配置。
