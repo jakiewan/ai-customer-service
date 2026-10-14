@@ -47,7 +47,7 @@ class Settings(BaseSettings):
     business_mode: Literal["mock", "http", "mcp"] = "mock"
     business_base_url: str = "http://127.0.0.1:8081"
     business_token: str = Field(default="", repr=False)
-    business_health_path: str = "/internal/service-centers?market=MY"
+    business_health_path: str = "/internal/service-centers?market=CN"
     business_timeout_seconds: float = Field(default=3.0, gt=0, le=30)
     agent_run_timeout_seconds: float = Field(default=60, gt=0, le=300)
     message_lock_timeout_seconds: float = Field(default=5, gt=0, le=60)

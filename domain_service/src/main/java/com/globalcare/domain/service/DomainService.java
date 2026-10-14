@@ -14,9 +14,9 @@ import java.util.concurrent.ConcurrentHashMap;
 public class DomainService {
 
     private static final String CN_ORDER_ID = "ORD-CN-1001";
-    private static final String MY_ORDER_ID = "ORD-MY-2001";
+    private static final String CN_REPAIR_ORDER_ID = "ORD-CN-2001";
     private static final String CN_SERIAL_NUMBER = "SN-CN-1001";
-    private static final String MY_SERIAL_NUMBER = "SN-MY-2001";
+    private static final String CN_REPAIR_SERIAL_NUMBER = "SN-CN-2001";
     private static final String STATUS_RECEIVED = "RECEIVED";
     private static final String STATUS_IN_REPAIR = "IN_REPAIR";
 
@@ -33,11 +33,11 @@ public class DomainService {
                 STATUS_RECEIVED
         ));
         addOrder(new OrderView(
-                MY_ORDER_ID,
-                "CUS-MY-001",
-                "MY",
+                CN_REPAIR_ORDER_ID,
+                "CUS-CN-002",
+                "CN",
                 "Xiaomi 15",
-                MY_SERIAL_NUMBER,
+                CN_REPAIR_SERIAL_NUMBER,
                 "2026-03-12",
                 STATUS_IN_REPAIR
         ));
@@ -90,7 +90,6 @@ public class DomainService {
     public List<ServiceCenterView> getServiceCenters(String market) {
         return switch (market == null ? "" : market.toUpperCase()) {
             case "CN" -> List.of(new ServiceCenterView("SC-CN-001", "北京模拟服务中心", "CN", "北京"));
-            case "MY" -> List.of(new ServiceCenterView("SC-MY-001", "Kuala Lumpur Simulated Service Center", "MY", "Kuala Lumpur"));
             default -> List.of();
         };
     }

@@ -240,7 +240,7 @@ experience/*.docx
 /docs/design/ecommerce-rag-20261013/skeleton.xml
 /diagram/ecommerce-mindmap-20261014-v2/sources.json
 /diagram/ecommerce-mindmap-20261014-v2/ultra-hd-receipt.json
-/答辩材料/2026-10-15/.build/validation.json
+/答辩材料/*
 /答辩材料/2026-10-15/.build/validation-final.json
 /答辩材料/2026-10-15/.build/validation-formal.json
 /答辩材料/2026-10-15/.build-v2/validation-v2.json
@@ -253,7 +253,4 @@ experience/*.docx
 /diagram/ecommerce-mindmap-20261014-v2/viewer-interaction-validation.json
 /input_materials/enterprise_requirements/上海市市场监管投诉举报热线服务合同-2025.pdf
 /input_materials/enterprise_requirements/都邦保险-在线客服系统采购项目标书-2021.pdf
-/答辩材料/2026-10-15/.build/node_modules/
-/答辩材料/2026-10-15/.build-v2/node_modules/
-/答辩材料/2026-10-15/.build-v3/node_modules/
-/答辩材料/2026-10-15/.build-v4/node_modules/
+

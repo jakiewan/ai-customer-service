@@ -135,7 +135,7 @@ class PolicyStore:
             raise ValueError("严格模式要求非空政策目录")
         for document in documents:
             if not self._valid_document(document):
-                raise ValueError("政策必须有合法市场、三级品类 goodsid、销售渠道、版本、来源标识、语言和内容")
+                raise ValueError("政策必须有中国大陆市场、三级品类 goodsid、销售渠道、版本、来源标识、语言和内容")
         keys = [(doc.metadata["market"], doc.metadata["goodsid"], doc.metadata["sales_channel"]) for doc in documents]
         if len(keys) != len(set(keys)):
             raise ValueError("同一国家、三级品类 goodsid 和销售渠道只能配置一份政策")
@@ -143,7 +143,7 @@ class PolicyStore:
 
     def _valid_document(self, document: Document) -> bool:
         metadata = document.metadata
-        return 0 < len(document.page_content.strip()) <= 4000 and metadata.get("market") in {"CN", "MY"} and metadata.get("goodsid") in CATEGORY_NAMES and metadata.get("sales_channel") in set(SalesChannel) and all(
+        return 0 < len(document.page_content.strip()) <= 4000 and metadata.get("market") == Market.CN and metadata.get("goodsid") in CATEGORY_NAMES and metadata.get("sales_channel") in set(SalesChannel) and all(
             isinstance(metadata.get(key), str) and metadata[key].strip()
             for key in ("policy_id", "title", "version", "language")
         ) and (not self.require_approved or (metadata.get("approved") is True and metadata.get("simulated") is not True))
@@ -173,8 +173,8 @@ class PolicyStore:
         self.pg_vector_store.add_documents(self.documents, ids=ids)
         return len(self.documents)
 
-    def retrieve(self, query: str, market: Market | str | None, top_k: int = 3, *, goodsid: str | None = None, sales_channel: str | None = None) -> list[PolicyEvidence]:
-        if not all((market, goodsid, sales_channel)):
+    def retrieve(self, query: str, market: Market | str | None = Market.CN, top_k: int = 3, *, goodsid: str | None = None, sales_channel: str | None = None) -> list[PolicyEvidence]:
+        if market not in (None, Market.CN) or not all((goodsid, sales_channel)):
             return []
         lowered_query = query.lower()
         if any(term.lower() in lowered_query for term in (*UNSUPPORTED_POLICY_TERMS, *UNSUPPORTED_PRODUCT_TERMS)):
@@ -185,8 +185,7 @@ class PolicyStore:
             for term in terms
         ):
             return []
-        normalized_market = str(market).upper()
-        scope = {"market": normalized_market, "goodsid": goodsid, "sales_channel": sales_channel}
+        scope = {"market": Market.CN.value, "goodsid": goodsid, "sales_channel": sales_channel}
         candidate_docs: list[Document]
         if self.pg_vector_store is not None:
             try:

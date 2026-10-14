@@ -21,7 +21,7 @@ def utc_now() -> datetime:
 
 class CreateConversationRequest(BaseModel):
     channel: Literal[Channel.WEB_CHAT.value] = Channel.WEB_CHAT.value
-    market: Market | None = None
+    market: Market | None = Market.CN
     language: Language | None = None
     goodsid: str | None = Field(default=None, pattern=r"^[0-9]{5}$")
     sales_channel: SalesChannel | None = None
@@ -40,7 +40,7 @@ class ConversationResponse(BaseModel):
 class MessageRequest(BaseModel):
     client_message_id: str = Field(min_length=1, max_length=64)
     message: str = Field(min_length=1, max_length=2000)
-    market: Market | None = None
+    market: Market | None = Market.CN
     language: Language | None = None
     goodsid: str | None = Field(default=None, pattern=r"^[0-9]{5}$")
     sales_channel: SalesChannel | None = None

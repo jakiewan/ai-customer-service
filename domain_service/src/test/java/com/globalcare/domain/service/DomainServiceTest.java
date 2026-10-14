@@ -11,9 +11,9 @@ class DomainServiceTest {
     @Test
     void shouldReturnRepairStatusForMockOrder() {
         DomainService service = new DomainService();
-        RepairStatusView status = service.getRepairStatus("ORD-MY-2001", null);
+        RepairStatusView status = service.getRepairStatus("ORD-CN-2001", null);
 
-        assertEquals("MY", status.market());
+        assertEquals("CN", status.market());
         assertEquals("IN_REPAIR", status.status());
         assertEquals("维修处理中", status.statusLabel());
     }

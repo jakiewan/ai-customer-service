@@ -3,12 +3,11 @@ from enum import StrEnum
 
 class Market(StrEnum):
     CN = "CN"
-    MY = "MY"
 
 
 class Language(StrEnum):
     ZH_CN = "zh-CN"
-    EN_MY = "en-MY"
+    EN = "en"
 
 
 class SalesChannel(StrEnum):

@@ -7,7 +7,7 @@ from collections.abc import AsyncIterator
 from typing import Any
 from uuid import UUID
 
-from .constants import ConversationStatus, ErrorCode
+from .constants import ConversationStatus, ErrorCode, Market
 from .graph import AgentBudgetError, AgentRunError, GraphService
 from .schemas import (
     AuditEventView,
@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 NODE_LABELS = {
     "classify_intent": "识别用户意图",
     "collect_info": "收集必要信息",
-    "retrieve_policy": "检索购买市场政策",
+    "retrieve_policy": "检索中国大陆政策",
     "resolve_link": "选择官方入口",
     "render_response": "生成客服回复",
 }
@@ -46,7 +46,7 @@ class ConversationService:
         record = await self.store.create_conversation(
             token=token,
             channel=request.channel,
-            market=request.market.value if request.market else None,
+            market=Market.CN.value,
             language=request.language.value if request.language else None,
             actor_context=actor_context,
             goodsid=request.goodsid,
@@ -119,7 +119,7 @@ class ConversationService:
             "conversation_id": str(conversation_id),
             # 仅把当前新增消息交给 reducer，历史上下文由 checkpoint/Store 维护。
             "messages": [{"role": "user", "content": request.message}],
-            "market": request.market.value if request.market else record.market,
+            "market": Market.CN.value,
             "language": request.language.value if request.language else record.language,
             "goodsid": request.goodsid or record.state.get("goodsid"),
             "sales_channel": request.sales_channel or record.state.get("sales_channel"),

@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 
 class IntentDecision(BaseModel):
     intent: Intent
-    market: Market | None = None
+    market: Market | None = Market.CN
     language: Language | None = None
     order_id: str | None = None
     serial_number: str | None = None
@@ -38,7 +38,7 @@ class AgentModel:
                         (
                             "你是售后客服路由器。只输出结构化字段，不回答用户问题。\n"
                             "意图只能是 FAQ、TROUBLESHOOTING、REPAIR_STATUS、AFTERSALES_LINK、PURCHASE_LINK、GENERAL。\n"
-                            "哪个国家购买就使用哪个国家售后，不推断未知市场。"
+                            "当前客服仅服务中国大陆，market 固定为 CN，不识别或询问购买国家。"
                         ),
                     ),
                     ("human", "用户消息：{message}"),
@@ -72,7 +72,7 @@ class AgentModel:
         context = extract_context(message)
         return IntentDecision(
             intent=classify_intent(message),
-            market=context.market or current_market,
+            market=Market.CN,
             language=context.language or current_language,
             order_id=context.order_id,
             serial_number=context.serial_number,
@@ -126,7 +126,7 @@ def _normalize_intent_payload(payload: object) -> dict[str, object]:
     if not isinstance(payload, dict):
         raise TypeError("模型意图输出不是 JSON object")
     normalized = dict(payload)
-    language_aliases = {"zh": "zh-CN", "zh-cn": "zh-CN", "en": "en-MY", "en-my": "en-MY"}
+    language_aliases = {"zh": "zh-CN", "zh-cn": "zh-CN", "en": "en", "en-us": "en", "en-gb": "en"}
     language = normalized.get("language")
     if isinstance(language, str):
         normalized["language"] = language_aliases.get(language.lower(), language)

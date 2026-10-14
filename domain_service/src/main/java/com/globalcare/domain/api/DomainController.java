@@ -42,7 +42,7 @@ public class DomainController {
     }
 
     @RequestMapping(value = "/service-centers", method = RequestMethod.GET)
-    public List<ServiceCenterView> getServiceCenters(@RequestParam String market) {
+    public List<ServiceCenterView> getServiceCenters(@RequestParam(defaultValue = "CN") String market) {
         return domainService.getServiceCenters(market);
     }
 

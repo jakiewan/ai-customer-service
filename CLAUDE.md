@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 当前业务契约（2026-10-14，优先于历史章节）
 
-GlobalCare 商品与售后咨询 Agent。政策按 `market + goodsid + sales_channel` 唯一匹配；goodsid 是三级品类 ID，SKU/型号/地区/日期不参与政策过滤。当前客服不调用个人业务工具；购买/申请通过固定 URL 引导，用户在官方页面办理。入口 URL 来自环境配置，不由模型生成。草稿业务代码和接口已移除。
+GlobalCare 商品与售后咨询 Agent。仅服务中国大陆，`market` 内部固定为 `CN`，用户不选择或补充国家；政策按 `goodsid + sales_channel` 唯一匹配（存储保留固定 market）；goodsid 是三级品类 ID，SKU/型号/地区/日期不参与政策过滤。当前客服不调用个人业务工具；购买/申请通过固定 URL 引导，用户在官方页面办理。入口 URL 来自环境配置，不由模型生成。草稿业务代码和接口已移除。
 
 本轮不新增 PG 知识表，保留既有会话/消息/审计/锁和 checkpoint。消息链接落既有消息表，先执行迁移。修改请遵守最小修改原则，不因企业级表述增加 Redis、多层 FAQ、费用账本或其他新平台。
 

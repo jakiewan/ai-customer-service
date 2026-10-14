@@ -30,7 +30,7 @@ from .schemas import (
     MessageRequest,
 )
 from .service import ConversationService
-from .store import ConversationNotFoundError, InMemoryStore
+from .store import ConversationNotFoundError, InMemoryStore, StoreRequestError
 
 logger = logging.getLogger(__name__)
 
@@ -169,6 +169,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def conversation_not_found_handler(request: Request, _: ConversationNotFoundError):
         return _error_response(ErrorCode.CONVERSATION_NOT_FOUND, "会话不存在", _trace_id(request))
 
+    @app.exception_handler(StoreRequestError)
+    async def store_request_exception_handler(request: Request, exc: StoreRequestError):
+        return JSONResponse(status_code=409, content={
+            "code": exc.code, "message": str(exc), "retryable": exc.retryable,
+            "trace_id": _trace_id(request),
+        })
+
     @app.exception_handler(PermissionError)
     async def permission_exception_handler(request: Request, _: PermissionError):
         return _error_response(ErrorCode.UNAUTHORIZED, "Demo Token 无效或无权访问", _trace_id(request))
@@ -194,7 +201,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if app_settings.policy_backend == "pgvector":
             try:
                 async with asyncio.timeout(4):
-                    evidence = await asyncio.to_thread(policy_store.retrieve, "手机保修政策", "MY", 1, goodsid="65539", sales_channel="MALL")
+                    evidence = await asyncio.to_thread(policy_store.retrieve, "手机保修政策", "CN", 1, goodsid="65539", sales_channel="MALL")
                 pgvector_state = "up" if evidence and not policy_store.degraded else "down"
             except Exception:
                 pgvector_state = "down"

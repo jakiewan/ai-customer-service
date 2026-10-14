@@ -72,30 +72,10 @@ RAG_CASES = [
     ("中国购买手机维修进度", Market.CN, "CN-MOBILE-AFTERSALES-2026"),
     ("中国手机售后服务", Market.CN, "CN-MOBILE-AFTERSALES-2026"),
     ("中国手机 warranty repair", Market.CN, "CN-MOBILE-AFTERSALES-2026"),
-    ("马来西亚手机保修期多久", Market.MY, "MY-MOBILE-AFTERSALES-2026"),
-    ("马来西亚手机保修政策", Market.MY, "MY-MOBILE-AFTERSALES-2026"),
-    ("马来西亚手机无法开机怎么办", Market.MY, "MY-MOBILE-AFTERSALES-2026"),
-    ("马来西亚手机黑屏排查", Market.MY, "MY-MOBILE-AFTERSALES-2026"),
-    ("马来西亚手机不充电如何处理", Market.MY, "MY-MOBILE-AFTERSALES-2026"),
-    ("马来西亚手机申请维修需要什么", Market.MY, "MY-MOBILE-AFTERSALES-2026"),
-    ("马来西亚手机如何报修", Market.MY, "MY-MOBILE-AFTERSALES-2026"),
-    ("马来西亚手机送修流程", Market.MY, "MY-MOBILE-AFTERSALES-2026"),
-    ("马来西亚手机维修进度查询规则", Market.MY, "MY-MOBILE-AFTERSALES-2026"),
-    ("马来西亚手机维修状态怎么查", Market.MY, "MY-MOBILE-AFTERSALES-2026"),
-    ("Malaysia phone warranty coverage", Market.MY, "MY-MOBILE-AFTERSALES-2026"),
-    ("Malaysia phone cannot power on", Market.MY, "MY-MOBILE-AFTERSALES-2026"),
-    ("Malaysia phone repair request", Market.MY, "MY-MOBILE-AFTERSALES-2026"),
-    ("Malaysia repair status", Market.MY, "MY-MOBILE-AFTERSALES-2026"),
-    ("马来西亚购买手机保修", Market.MY, "MY-MOBILE-AFTERSALES-2026"),
-    ("马来西亚购买手机售后", Market.MY, "MY-MOBILE-AFTERSALES-2026"),
-    ("马来西亚购买手机故障维修", Market.MY, "MY-MOBILE-AFTERSALES-2026"),
-    ("马来西亚购买手机维修进度", Market.MY, "MY-MOBILE-AFTERSALES-2026"),
-    ("马来西亚手机售后服务", Market.MY, "MY-MOBILE-AFTERSALES-2026"),
-    ("Malaysia phone warranty repair", Market.MY, "MY-MOBILE-AFTERSALES-2026"),
 ]
 
 
-@pytest.mark.parametrize("query,market,expected_policy", RAG_CASES, ids=[f"rag-positive-{index:02d}" for index in range(1, 41)])
+@pytest.mark.parametrize("query,market,expected_policy", RAG_CASES, ids=[f"rag-positive-{index:02d}" for index in range(1, len(RAG_CASES) + 1)])
 def test_rag_market_and_evidence_matrix(query: str, market: Market, expected_policy: str) -> None:
     store = PolicyStore("agent_service/data/policies")
     evidence = store.retrieve(query, market, top_k=2, goodsid="65539", sales_channel="MALL")
@@ -132,20 +112,19 @@ NEGATIVE_RAG_CASES = [
 @pytest.mark.parametrize("query", NEGATIVE_RAG_CASES, ids=[f"rag-negative-{index:02d}" for index in range(1, 21)])
 def test_rag_negative_and_high_risk_matrix(query: str) -> None:
     store = PolicyStore("agent_service/data/policies")
-    assert store.retrieve(query, Market.MY, goodsid="65539", sales_channel="MALL") == []
     assert store.retrieve(query, Market.CN, goodsid="65539", sales_channel="MALL") == []
 
 
 BUSINESS_CASES = [
     ("order", "ORD-CN-1001", "CN"),
-    ("order", "ORD-MY-2001", "MY"),
+    ("order", "ORD-CN-2001", "CN"),
     ("device", "SN-CN-1001", "CN"),
-    ("device", "SN-MY-2001", "MY"),
+    ("device", "SN-CN-2001", "CN"),
     ("status_order", "ORD-CN-1001", "RECEIVED"),
-    ("status_order", "ORD-MY-2001", "IN_REPAIR"),
+    ("status_order", "ORD-CN-2001", "IN_REPAIR"),
     ("status_device", "SN-CN-1001", "RECEIVED"),
-    ("status_device", "SN-MY-2001", "IN_REPAIR"),
-    ("order", "ord-my-2001", "MY"),
+    ("status_device", "SN-CN-2001", "IN_REPAIR"),
+    ("order", "ord-cn-2001", "CN"),
     ("device", "sn-cn-1001", "CN"),
 ]
 
@@ -171,7 +150,7 @@ async def test_business_gateway_matrix(operation: str, identifier: str, expected
 GRAPH_CASES = [
     ("手机无法开机怎么办", "faq_steps", "充电 30 分钟"),
     ("保修期多久", "policy_answer", "12 个月"),
-    ("查询订单 ORD-MY-2001 的维修进度", "status", "官方售后入口"),
+    ("查询订单 ORD-CN-2001 的维修进度", "status", "官方售后入口"),
     ("我要申请售后维修，手机无法开机", "application", "官方售后入口"),
     ("我要申请售后维修", "application_simple", "官方售后入口"),
     ("退款要怎么处理", "human", "没有匹配"),
@@ -185,7 +164,7 @@ async def _run_graph_case(message: str, expected_kind: str) -> str:
     app = create_app(Settings(_env_file=None, demo_token="matrix-token", purchase_url="https://shop.example.com", aftersales_url="https://care.example.com"))
     service = app.state.conversation_service
     conversation = await service.create_conversation(
-        "matrix-token", CreateConversationRequest(channel="WEB_CHAT", market="MY", language="zh-CN", goodsid="65539", sales_channel="MALL")
+        "matrix-token", CreateConversationRequest(channel="WEB_CHAT", market="CN", language="zh-CN", goodsid="65539", sales_channel="MALL")
     )
     events = [
         event
@@ -288,7 +267,7 @@ def test_api_contract_and_security_matrix(case: str, expected_status: int) -> No
         created = client.post(
             "/api/v1/conversations",
             headers=headers,
-            json={"channel": "WEB_CHAT", "market": "MY", "language": "zh-CN", "goodsid": "65539", "sales_channel": "MALL"},
+            json={"channel": "WEB_CHAT", "market": "CN", "language": "zh-CN", "goodsid": "65539", "sales_channel": "MALL"},
         )
         conversation_id = created.json()["data"]["conversation_id"]
         if case == "conversation_view_with_token":

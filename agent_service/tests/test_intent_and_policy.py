@@ -12,27 +12,23 @@ def test_intent_layers_route_to_different_paths() -> None:
     assert classify_intent("保修期多久") == Intent.FAQ
 
 
-def test_context_extracts_order_and_market() -> None:
-    context = extract_context("我在马来西亚购买，订单号 ORD-MY-2001，无法开机")
-    assert context.order_id == "ORD-MY-2001"
-    assert context.market == Market.MY
+def test_context_extracts_order_with_fixed_mainland_market() -> None:
+    context = extract_context("订单号 ORD-CN-2001，无法开机")
+    assert context.order_id == "ORD-CN-2001"
+    assert context.market == Market.CN
 
 
-def test_policy_retrieval_is_market_isolated() -> None:
+def test_policy_retrieval_defaults_to_mainland() -> None:
     store = PolicyStore("agent_service/data/policies")
-    evidence = store.retrieve("无法开机需要怎么处理", Market.MY, goodsid="65539", sales_channel="MALL")
+    evidence = store.retrieve("无法开机需要怎么处理", goodsid="65539", sales_channel="MALL")
     assert evidence
-    assert all(item.market == Market.MY for item in evidence)
-    assert all(item.policy_id.startswith("MY-") for item in evidence)
+    assert all(item.market == Market.CN for item in evidence)
+    assert all(item.policy_id.startswith("CN-") for item in evidence)
 
 
-@pytest.mark.parametrize("text,market", [
-    ("MY", Market.MY), ("my", Market.MY), ("country: my", Market.MY),
-    ("手机 MY 保修", Market.MY), ("Malaysia phone warranty", Market.MY),
-    ("CN", Market.CN), ("cn", Market.CN), ("I bought my phone in China", Market.CN),
-    ("my phone warranty", None), ("My phone cannot power on", None),
-    ("MY PHONE WARRANTY", None), ("phone bought in MY", Market.MY),
-    ("ORD-MY-2001", None), ("SN-CN-1001", None),
+@pytest.mark.parametrize("text", [
+    "手机保修", "my phone warranty", "My phone cannot power on",
+    "ORD-CN-2001", "SN-CN-1001", "country: US",
 ])
-def test_market_code_and_country_name_are_not_english_possessive_or_identifiers(text, market):
-    assert extract_context(text).market == market
+def test_text_does_not_switch_mainland_market(text):
+    assert extract_context(text).market == Market.CN

@@ -111,6 +111,8 @@ class PostgresStore:
                 raise ConversationNotFoundError(str(conversation_id))
             if token is not None and row["demo_subject_hash"] != subject_hash(token):
                 raise PermissionError("会话无权访问")
+            if row["market"] not in (None, "CN"):
+                raise StoreRequestError("历史会话不属于中国大陆服务范围，请新建会话", code="UNSUPPORTED_MARKET")
             messages = await (await connection.execute(
                 "SELECT * FROM conversation_messages WHERE conversation_id=%s ORDER BY created_at,message_id",
                 (conversation_id,),

@@ -27,7 +27,7 @@ def test_new_app_recovers_message_links_audit_and_completed_request(database_url
     headers = {"X-Demo-Token": "restart-test"}
     body = {"client_message_id": "persistent-request", "message": "我要申请维修"}
     with TestClient(create_app(settings)) as first:
-        created = first.post("/api/v1/conversations", headers=headers, json={"market": "MY"})
+        created = first.post("/api/v1/conversations", headers=headers, json={"market": "CN"})
         uri = "/api/v1/conversations/" + created.json()["data"]["conversation_id"]
         response = first.post(uri + "/messages/stream", headers=headers, json=body)
         assert "https://care.example.com" in response.text
@@ -52,8 +52,8 @@ async def test_concurrent_same_request_has_one_message_pair_and_one_completion(d
     async with first_app.router.lifespan_context(first_app), second_app.router.lifespan_context(second_app):
         first = first_app.state.conversation_service
         second = second_app.state.conversation_service if backend == "postgres" else first
-        conversation = await first.create_conversation("owner", CreateConversationRequest(market="MY"))
-        request = MessageRequest(client_message_id="concurrent", message="申请维修，订单 ORD-MY-2001，手机无法开机")
+        conversation = await first.create_conversation("owner", CreateConversationRequest(market="CN"))
+        request = MessageRequest(client_message_id="concurrent", message="申请维修，订单 ORD-CN-2001，手机无法开机")
 
         async def run(service):
             return [event async for event in service.stream_message(conversation.conversation_id, "owner", request, "concurrent-trace")]
@@ -72,7 +72,7 @@ def test_restart_replay_preserves_each_messages_own_links(database_url, message)
     headers = {"X-Demo-Token": "restart-test"}
     body = {"client_message_id": "second-request", "message": message}
     with TestClient(create_app(settings)) as first:
-        created = first.post("/api/v1/conversations", headers=headers, json={"market": "MY", "goodsid": "65539", "sales_channel": "MALL"})
+        created = first.post("/api/v1/conversations", headers=headers, json={"market": "CN", "goodsid": "65539", "sales_channel": "MALL"})
         uri = "/api/v1/conversations/" + created.json()["data"]["conversation_id"]
         first.post(uri + "/messages/stream", headers=headers, json={"client_message_id": "entry", "message": "我要申请维修"})
         response = first.post(uri + "/messages/stream", headers=headers, json=body)
@@ -93,7 +93,7 @@ def test_failed_run_is_queryable_and_same_id_replays_failure(database_url, backe
     settings = Settings(_env_file=None, persistence_mode=backend, database_url=database_url, token_budget=1)
     headers = {"X-Demo-Token": settings.demo_token}
     with TestClient(create_app(settings)) as client:
-        created = client.post("/api/v1/conversations", headers=headers, json={"market": "MY"})
+        created = client.post("/api/v1/conversations", headers=headers, json={"market": "CN"})
         uri = "/api/v1/conversations/" + created.json()["data"]["conversation_id"]
         body = {"client_message_id": "over-budget", "message": "手机无法开机怎么办，需要查询售后政策"}
         first = client.post(uri + "/messages/stream", headers=headers, json=body)
@@ -107,15 +107,32 @@ def test_failed_run_is_queryable_and_same_id_replays_failure(database_url, backe
 
 
 @pytest.mark.parametrize("backend", ["memory", "postgres"])
-@pytest.mark.parametrize("changed", [{"message": "你好"}, {"market": "CN"}, {"language": "en-MY"}])
+@pytest.mark.parametrize("changed", [{"message": "你好"}, {"goodsid": "65540"}, {"language": "en"}])
 def test_request_id_cannot_replay_different_content_or_context(database_url, backend, changed):
     settings = Settings(_env_file=None, persistence_mode=backend, database_url=database_url)
     headers = {"X-Demo-Token": settings.demo_token}
     with TestClient(create_app(settings)) as client:
-        created = client.post("/api/v1/conversations", headers=headers, json={"market": "MY"})
+        created = client.post("/api/v1/conversations", headers=headers, json={"market": "CN"})
         uri = "/api/v1/conversations/" + created.json()["data"]["conversation_id"]
         original = {"client_message_id": "bound-id", "message": "保修期多久"}
         client.post(uri + "/messages/stream", headers=headers, json=original)
         response = client.post(uri + "/messages/stream", headers=headers, json={**original, **changed})
         assert '"code": "IDEMPOTENCY_CONFLICT"' in response.text
         assert len(client.get(uri, headers=headers).json()["data"]["messages"]) == 2
+
+
+def test_legacy_foreign_database_conversation_requires_new_mainland_session(database_url):
+    settings = Settings(_env_file=None, persistence_mode="postgres", database_url=database_url)
+    headers = {"X-Demo-Token": settings.demo_token}
+    with TestClient(create_app(settings)) as client:
+        cid = client.post("/api/v1/conversations", headers=headers, json={}).json()["data"]["conversation_id"]
+        with psycopg.connect(database_url.replace("postgresql+psycopg://", "postgresql://")) as connection:
+            connection.execute("UPDATE conversations SET market='US' WHERE conversation_id=%s", (cid,))
+        uri = "/api/v1/conversations/" + cid
+        response = client.post(uri + "/messages/stream", headers=headers,
+                               json={"client_message_id": "legacy", "message": "手机保修"})
+        assert response.status_code == 409
+        assert response.json()["code"] == "UNSUPPORTED_MARKET"
+        with psycopg.connect(database_url.replace("postgresql+psycopg://", "postgresql://")) as connection:
+            assert connection.execute("SELECT market FROM conversations WHERE conversation_id=%s", (cid,)).fetchone()[0] == "US"
+            assert connection.execute("SELECT count(*) FROM conversation_messages WHERE conversation_id=%s", (cid,)).fetchone()[0] == 0

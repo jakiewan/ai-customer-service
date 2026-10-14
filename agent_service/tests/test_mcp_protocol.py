@@ -54,17 +54,17 @@ async def test_mcp_discovery_failure_is_typed_and_can_recover_when_service_retur
     port = free_port()
     gateway = McpBusinessGateway(f"http://127.0.0.1:{port}/mcp")
     with pytest.raises(BusinessGatewayError):
-        await gateway.query_order("ORD-MY-2001")
+        await gateway.query_order("ORD-CN-2001")
     with server(port):
-        result = await gateway.query_order("ORD-MY-2001")
-        assert result["order_id"] == "ORD-MY-2001"
+        result = await gateway.query_order("ORD-CN-2001")
+        assert result["order_id"] == "ORD-CN-2001"
 
 
 @pytest.mark.asyncio
 async def test_real_mcp_call_timeout_and_json_error_are_not_business_facts():
     with server(free_port()) as url:
         gateway = McpBusinessGateway(url, timeout_seconds=0.2)
-        assert (await gateway.query_order("ORD-MY-2001"))["market"] == "MY"
+        assert (await gateway.query_order("ORD-CN-2001"))["market"] == "CN"
         with pytest.raises(BusinessGatewayError) as slow:
             await gateway.query_order("SLOW")
         assert slow.value.code == "TOOL_TIMEOUT"
@@ -77,6 +77,6 @@ async def test_real_mcp_call_timeout_and_json_error_are_not_business_facts():
 async def test_mcp_business_tools_require_service_credential_when_configured():
     with server(free_port(), token="fixture-service-credential") as url:
         with pytest.raises(BusinessGatewayError):
-            await McpBusinessGateway(url).query_order("ORD-MY-2001")
+            await McpBusinessGateway(url).query_order("ORD-CN-2001")
         gateway = McpBusinessGateway(url, service_token="fixture-service-credential")
-        assert (await gateway.query_order("ORD-MY-2001"))["market"] == "MY"
+        assert (await gateway.query_order("ORD-CN-2001"))["market"] == "CN"

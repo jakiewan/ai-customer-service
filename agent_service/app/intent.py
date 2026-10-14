@@ -165,20 +165,8 @@ def extract_context(text: str) -> ExtractedContext:
     )
 
     lowered = text.lower()
-    market_text = re.sub(r"\b(?:ORD|SN)-[A-Z0-9-]+\b", "", text, flags=re.IGNORECASE)
-    market = None
-    # 英语所有格 my/My 不是 MY 国家代码；单独代码或 country/market 标注仍兼容小写。
-    my_code = (market_text.strip().lower() == "my" or
-               re.search(r"(?:country|market|国家|市场)\s*[:：=]?\s*my\b", market_text, re.IGNORECASE) or
-               re.search(r"\b(?:in|from)\s+MY\b", market_text) or
-               (re.search(r"\bMY\b", market_text) and re.search(r"[\u4e00-\u9fff]", market_text)))
-    if "马来西亚" in text or "malaysia" in market_text.lower() or my_code:
-        market = Market.MY
-    elif "中国" in text or "china" in market_text.lower() or re.search(r"\bCN\b", market_text, re.IGNORECASE):
-        market = Market.CN
-
     language_text = re.sub(r"\b(?:ord|sn)-[a-z0-9-]+\b", "", lowered)
-    language = Language.EN_MY if re.search(r"\b(the|what|how|my|repair)\b", language_text) else Language.ZH_CN
+    language = Language.EN if re.search(r"\b(the|what|how|my|repair)\b", language_text) else Language.ZH_CN
     issue_category = "cannot_power_on" if _contains(text, POWER_TROUBLESHOOTING_TERMS) else "general_issue"
     goodsid = _first_match((r"(?:goodsid|三级品类|品类)\s*[:：=]?\s*(\d{5})\b",), text)
     if text.strip() in CATEGORY_NAMES:
@@ -190,7 +178,7 @@ def extract_context(text: str) -> ExtractedContext:
         order_id=order_id,
         serial_number=serial_number,
         product_model=product_model,
-        market=market,
+        market=Market.CN,
         language=language,
         issue_category=issue_category,
         goodsid=goodsid,

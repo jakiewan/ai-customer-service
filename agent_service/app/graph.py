@@ -5,7 +5,7 @@ from typing import Any
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
 
-from .constants import AgentPhase, ConversationStatus, Intent
+from .constants import AgentPhase, ConversationStatus, Intent, Market
 from .intent import (
     FAQ_TERMS,
     classify_intent,
@@ -38,7 +38,7 @@ def _step(state: AfterSalesState, **patch: Any) -> dict[str, Any]:
 def _missing_fields(state: AfterSalesState) -> list[str]:
     if state.get("intent") not in {Intent.FAQ, Intent.TROUBLESHOOTING}:
         return []
-    return [key for key in ("market", "goodsid", "sales_channel") if not state.get(key)]
+    return [key for key in ("goodsid", "sales_channel") if not state.get(key)]
 
 
 def build_graph(
@@ -66,7 +66,7 @@ def build_graph(
         )
         resuming = (
             bool(state.get("missing_fields"))
-            and bool(explicit.market or explicit.goodsid or explicit.sales_channel)
+            and bool(explicit.goodsid or explicit.sales_channel)
             and not link_cancelled(message)
             and not any(
                 term in message.lower()
@@ -90,7 +90,7 @@ def build_graph(
         return _step(
             state,
             intent=str(intent),
-            market=str(explicit.market) if explicit.market else state.get("market"),
+            market=Market.CN.value,
             language=state.get("language") or str(decision.language or "zh-CN"),
             goodsid=explicit.goodsid or state.get("goodsid"),
             sales_channel=explicit.sales_channel or state.get("sales_channel"),
@@ -106,7 +106,6 @@ def build_graph(
     async def collect_info_node(state: AfterSalesState) -> dict[str, Any]:
         missing = _missing_fields(state)
         labels = {
-            "market": "购买国家（CN / MY）",
             "goodsid": "三级品类 goodsid（如手机 65539）",
             "sales_channel": "销售渠道（商城 / 自营店 / 授权店）",
         }
@@ -125,7 +124,7 @@ def build_graph(
             evidence = await asyncio.to_thread(
                 policy_store.retrieve,
                 state.get("issue_summary") or _last_user_message(state),
-                state.get("market"),
+                Market.CN,
                 top_k=3,
                 goodsid=state.get("goodsid"),
                 sales_channel=state.get("sales_channel"),
@@ -138,7 +137,7 @@ def build_graph(
                 state,
                 policy_evidence=[],
                 human_required=True,
-                human_reason="没有匹配国家、三级品类和销售渠道的有效政策",
+                human_reason="没有匹配三级品类和销售渠道的中国大陆政策",
                 result_type="UNSUPPORTED",
                 phase=AgentPhase.AI_CANNOT_RESOLVE.value,
                 conversation_status=ConversationStatus.AI_CANNOT_RESOLVE.value,
@@ -242,7 +241,7 @@ def build_graph(
         }:
             message = _last_user_message(state).lower()
             if all(
-                state.get(key) for key in ("market", "goodsid", "sales_channel")
+                state.get(key) for key in ("goodsid", "sales_channel")
             ) and any(term.lower() in message for term in FAQ_TERMS):
                 return "retrieve_policy"
             return "resolve_link"

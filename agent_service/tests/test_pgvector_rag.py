@@ -14,20 +14,14 @@ PG_RAG_CASES = [
     ("中国手机维修进度", Market.CN, "CN-MOBILE-AFTERSALES-2026"),
     ("China phone warranty", Market.CN, "CN-MOBILE-AFTERSALES-2026"),
     ("China phone power on issue", Market.CN, "CN-MOBILE-AFTERSALES-2026"),
-    ("Malaysia phone warranty", Market.MY, "MY-MOBILE-AFTERSALES-2026"),
-    ("Malaysia phone cannot power on", Market.MY, "MY-MOBILE-AFTERSALES-2026"),
-    ("Malaysia phone repair request", Market.MY, "MY-MOBILE-AFTERSALES-2026"),
-    ("Malaysia repair status", Market.MY, "MY-MOBILE-AFTERSALES-2026"),
-    ("马来西亚手机保修", Market.MY, "MY-MOBILE-AFTERSALES-2026"),
-    ("马来西亚手机无法开机", Market.MY, "MY-MOBILE-AFTERSALES-2026"),
     ("退款规则", Market.CN, None),
-    ("换机资格", Market.MY, None),
+    ("换机资格", Market.CN, None),
     ("赔偿政策", Market.CN, None),
-    ("智能手表维修", Market.MY, None),
+    ("智能手表维修", Market.CN, None),
     ("耳机维修", Market.CN, None),
-    ("天气预报", Market.MY, None),
+    ("天气预报", Market.CN, None),
     ("游戏账号密码", Market.CN, None),
-    ("路由器配置", Market.MY, None),
+    ("路由器配置", Market.CN, None),
 ]
 
 
@@ -49,7 +43,7 @@ def pg_store() -> PolicyStore:
     return store
 
 
-@pytest.mark.parametrize("query,market,expected_policy", PG_RAG_CASES, ids=[f"pg-rag-{index:02d}" for index in range(1, 21)])
+@pytest.mark.parametrize("query,market,expected_policy", PG_RAG_CASES, ids=[f"pg-rag-{index:02d}" for index in range(1, len(PG_RAG_CASES) + 1)])
 def test_real_pgvector_rag_market_and_guard(pg_store: PolicyStore, query: str, market: Market, expected_policy: str | None) -> None:
     evidence = pg_store.retrieve(query, market, top_k=2, goodsid="65539", sales_channel="MALL")
     if expected_policy is None:

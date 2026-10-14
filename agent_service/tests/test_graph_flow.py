@@ -74,7 +74,7 @@ async def test_entry_request_returns_fixed_link_without_order_information(
 async def test_information_and_negative_requests_do_not_trigger_navigation(message):
     service = make_service()
     conv = await conversation(
-        service, market="MY", goodsid="65539", sales_channel="MALL"
+        service, market="CN", goodsid="65539", sales_channel="MALL"
     )
     events = await run(service, conv, message)
     assert events[-1]["data"]["action_links"] == []
@@ -85,9 +85,8 @@ async def test_missing_scope_is_collected_across_turns():
     service = make_service()
     conv = await conversation(service)
     first = await run(service, conv, "保修多久", "first")
-    assert "购买国家" in output(first)
-    second = await run(service, conv, "中国", "second")
-    assert "三级品类" in output(second) and "销售渠道" in output(second)
+    assert "三级品类" in output(first) and "销售渠道" in output(first)
+    assert "购买国家" not in output(first)
     third = await run(service, conv, "65539", "third")
     assert "销售渠道" in output(third)
     fourth = await run(service, conv, "商城", "fourth")
@@ -106,7 +105,7 @@ async def test_missing_scope_is_collected_across_turns():
 async def test_policy_question_and_entry_can_be_returned_together():
     service = make_service()
     conv = await conversation(
-        service, market="MY", goodsid="65539", sales_channel="DIRECT"
+        service, market="CN", goodsid="65539", sales_channel="DIRECT"
     )
     events = await run(service, conv, "申请维修需要什么材料？请给申请入口")
     assert "官方售后页面" in output(events)
@@ -118,7 +117,7 @@ async def test_policy_question_and_entry_can_be_returned_together():
 async def test_link_and_citations_survive_history_and_idempotent_replay():
     service = make_service()
     conv = await conversation(
-        service, market="MY", goodsid="65539", sales_channel="MALL"
+        service, market="CN", goodsid="65539", sales_channel="MALL"
     )
     message = "申请维修材料说明和申请入口"
     first = await run(service, conv, message)
@@ -151,7 +150,7 @@ async def test_personal_business_queries_are_not_called(monkeypatch):
         monkeypatch.setattr(MockBusinessGateway, name, forbidden)
     service = make_service()
     conv = await conversation(service)
-    events = await run(service, conv, "申请维修，订单 ORD-MY-2001")
+    events = await run(service, conv, "申请维修，订单 ORD-CN-2001")
     assert events[-1]["data"]["action_links"]
     assert not any(event["event"] == "error" for event in events)
 
@@ -197,3 +196,48 @@ def test_removed_business_endpoint_is_not_in_openapi():
             ).status_code
             == 404
         )
+
+
+@pytest.mark.asyncio
+async def test_policy_defaults_to_cn_without_country_input_and_keeps_channel_isolation():
+    service = make_service()
+    conv = await conversation(service, goodsid="65539", sales_channel="DIRECT")
+    events = await run(service, conv, "手机保修多久")
+    assert conv.market == "CN"
+    assert "购买国家" not in output(events)
+    evidence = next(event["data"] for event in events if event["event"] == "policy_evidence")
+    assert (evidence["market"], evidence["sales_channel"]) == ("CN", "DIRECT")
+    assert events[-1]["data"]["result_type"] == "ANSWER"
+
+
+def test_api_defaults_to_mainland_and_rejects_foreign_scope():
+    settings = Settings(_env_file=None)
+    with TestClient(create_app(settings)) as client:
+        headers = {"X-Demo-Token": settings.demo_token}
+        created = client.post("/api/v1/conversations", headers=headers, json={})
+        assert created.status_code == 200
+        assert created.json()["data"]["market"] == "CN"
+        uri = "/api/v1/conversations/" + created.json()["data"]["conversation_id"]
+        assert client.post("/api/v1/conversations", headers=headers, json={"market": "US"}).status_code == 400
+        response = client.post(uri + "/messages/stream", headers=headers,
+                               json={"client_message_id": "foreign", "message": "保修多久", "market": "US"})
+        assert response.status_code == 400
+
+
+def test_legacy_foreign_conversation_is_rejected_without_relabeling_or_replaying():
+    settings = Settings(_env_file=None)
+    app = create_app(settings)
+    with TestClient(app) as client:
+        headers = {"X-Demo-Token": settings.demo_token}
+        created = client.post("/api/v1/conversations", headers=headers, json={})
+        cid = created.json()["data"]["conversation_id"]
+        from uuid import UUID
+        record = app.state.store._conversations[UUID(cid)]
+        record.market = "US"
+        uri = "/api/v1/conversations/" + cid
+        assert client.get(uri, headers=headers).status_code == 409
+        response = client.post(uri + "/messages/stream", headers=headers,
+                               json={"client_message_id": "legacy", "message": "手机保修"})
+        assert response.status_code == 409
+        assert response.json()["code"] == "UNSUPPORTED_MARKET"
+        assert record.market == "US" and record.messages == []

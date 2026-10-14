@@ -22,11 +22,11 @@ TOKEN = "globalcare-demo-token"
 HEADERS = {"X-Demo-Token": TOKEN, "Content-Type": "application/json"}
 
 
-def create_conversation(client: httpx.Client, market: str) -> str:
+def create_conversation(client: httpx.Client) -> str:
     response = client.post(
         f"{BASE_URL}/api/v1/conversations",
         headers=HEADERS,
-        json={"channel": "WEB_CHAT", "market": market, "language": "zh-CN", "goodsid": "65539", "sales_channel": "MALL"},
+        json={"channel": "WEB_CHAT", "language": "zh-CN", "goodsid": "65539", "sales_channel": "MALL"},
     )
     response.raise_for_status()
     return response.json()["data"]["conversation_id"]
@@ -85,18 +85,13 @@ def _render_event(event_name: str, payload: dict, reply_chunks: list[str]) -> No
 
 
 def main() -> None:
-    if not sys.stdin.isatty():
-        market = sys.argv[1] if len(sys.argv) > 1 else "MY"
-    else:
-        market = input("选择购买市场 (CN/MY), 默认 MY: ").strip().upper() or "MY"
-
     with httpx.Client() as client:
         try:
-            conversation_id = create_conversation(client, market)
+            conversation_id = create_conversation(client)
         except httpx.HTTPError as exc:
             print(f"无法创建会话,请确认 FastAPI 服务已启动: {exc}", file=sys.stderr)
             return 2
-        print(f"会话已创建: {conversation_id}, market={market}")
+        print(f"会话已创建: {conversation_id}, 中国大陆客服")
         print("输入消息并回车发送,`:quit` 退出。\n", flush=True)
 
         for raw_line in sys.stdin:

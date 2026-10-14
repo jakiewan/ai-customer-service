@@ -12,9 +12,9 @@ from agent_service.app.main import create_app
 
 
 @pytest.mark.parametrize("message,market,expected", [
-    ("手机无法开机怎么办", "MY", "充电 30 分钟"),
-    ("我要申请维修", "MY", "暂未配置"),
-    ("保修期多久", None, "购买国家"),
+    ("手机无法开机怎么办", "CN", "充电 30 分钟"),
+    ("我要申请维修", "CN", "暂未配置"),
+    ("保修期多久", None, "12 个月"),
 ])
 def test_incorrect_model_output_cannot_override_rules_or_invent_market(message, market, expected):
     class Provider(BaseHTTPRequestHandler):
@@ -23,7 +23,7 @@ def test_incorrect_model_output_cannot_override_rules_or_invent_market(message, 
 
         def do_POST(self):
             request = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
-            decision = json.dumps({"intent": "AFTERSALES_LINK", "market": "MY", "order_id": "ORD-MY-2001", "language": "en-MY"})
+            decision = json.dumps({"intent": "AFTERSALES_LINK", "market": "US", "order_id": "ORD-CN-2001", "language": "en"})
             response_message = {"role": "assistant", "content": decision}
             if request.get("tools"):
                 response_message["tool_calls"] = [{"id": "fixture", "type": "function", "function": {

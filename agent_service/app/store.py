@@ -108,6 +108,8 @@ class InMemoryStore:
             raise ConversationNotFoundError(str(conversation_id))
         if token is not None and conversation.token != token:
             raise PermissionError(str(conversation_id))
+        if conversation.market not in (None, "CN"):
+            raise StoreRequestError("历史会话不属于中国大陆服务范围，请新建会话", code="UNSUPPORTED_MARKET")
         return conversation
 
     async def append_user_message(self, conversation_id: UUID, token: str, client_message_id: str, content: str, request_fingerprint: str | None = None) -> dict[str, Any] | None:

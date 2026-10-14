@@ -11,7 +11,7 @@ def test_api_creates_conversation_and_streams_sse() -> None:
     created = client.post(
         "/api/v1/conversations",
         headers=headers,
-        json={"channel": "WEB_CHAT", "market": "MY", "language": "zh-CN", "goodsid": "65539", "sales_channel": "MALL"},
+        json={"channel": "WEB_CHAT", "market": "CN", "language": "zh-CN", "goodsid": "65539", "sales_channel": "MALL"},
     )
     assert created.status_code == 200
     conversation_id = created.json()["data"]["conversation_id"]

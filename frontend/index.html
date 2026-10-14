@@ -499,12 +499,6 @@
           </div>
           <div class="topbar-actions">
             <div class="select-wrap">
-              <select v-model="market" aria-label="购买国家">
-                <option value="MY">马来西亚 · MY</option>
-                <option value="CN">中国 · CN</option>
-              </select>
-            </div>
-            <div class="select-wrap">
               <select v-model="goodsid" aria-label="三级品类">
                 <option value="65539">手机 · 65539</option><option value="65540">电脑 · 65540</option>
                 <option value="65541">空调 · 65541</option><option value="65542">冰箱 · 65542</option>
@@ -584,7 +578,7 @@
               <div v-if="policy" class="policy-card">
                 <strong>{{ policy.title }}</strong>
                 <p>{{ policy.excerpt }}</p>
-                <div class="policy-meta"><span>国家：{{ policy.market }}</span><span>品类：{{ policy.goodsid }}</span><span>渠道：{{ policy.sales_channel }}</span><span>版本：{{ policy.version }}</span></div>
+                <div class="policy-meta"><span>中国大陆政策</span><span>品类：{{ policy.goodsid }}</span><span>渠道：{{ policy.sales_channel }}</span><span>版本：{{ policy.version }}</span></div>
               </div>
               <div v-else class="notice">当前问题尚未触发政策检索。</div>
             </div>
@@ -596,7 +590,7 @@
               </div>
               <div v-else class="notice">明确购买或申请诉求时提供已配置的官方入口。</div>
             </div>
-            <div class="notice">政策按国家、三级品类和销售渠道匹配。购买与售后申请由你在官方页面完成。</div>
+            <div class="notice">当前提供中国大陆政策咨询。购买与售后申请由你在官方页面完成。</div>
           </aside>
         </div>
       </main>
@@ -609,7 +603,6 @@
     createApp({
       setup() {
         const input = ref("");
-        const market = ref("MY");
         const goodsid = ref("65539");
         const salesChannel = ref("MALL");
         const isTyping = ref(false);
@@ -697,7 +690,7 @@
           const response = await fetch(apiBaseUrl + "/api/v1/conversations", {
             method: "POST",
             headers: { "Content-Type": "application/json", "X-Demo-Token": demoToken },
-            body: JSON.stringify({ channel: "WEB_CHAT", market: market.value, language: "zh-CN", goodsid: goodsid.value, sales_channel: salesChannel.value })
+            body: JSON.stringify({ channel: "WEB_CHAT", language: "zh-CN", goodsid: goodsid.value, sales_channel: salesChannel.value })
           });
           if (!response.ok) throw new Error("无法创建 AI 客服会话");
           const payload = await response.json();
@@ -737,7 +730,6 @@
               body: JSON.stringify({
                 client_message_id: "web-" + Date.now(),
                 message: userText,
-                market: market.value,
                 goodsid: goodsid.value,
                 sales_channel: salesChannel.value,
                 language: "zh-CN"
@@ -804,7 +796,6 @@
 
         return {
           input,
-          market,
           messages,
           trace,
           policy,

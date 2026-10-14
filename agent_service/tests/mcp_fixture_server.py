@@ -15,21 +15,21 @@ mcp = FastMCP("test-business-boundary", auth=BusinessTokenVerifier(service_token
 
 @mcp.tool
 async def query_order(order_id: str) -> dict:
-    if order_id in {"SLOW", "ORD-MY-SLOW"}:
+    if order_id in {"SLOW", "ORD-CN-SLOW"}:
         await asyncio.sleep(2)
     if order_id == "INVALID":
         return {"isError": True, "code": "ORDER_NOT_FOUND", "message": "订单不存在"}
-    return dict(MOCK_ORDERS["ORD-MY-2001"])
+    return dict(MOCK_ORDERS["ORD-CN-2001"])
 
 
 @mcp.tool
 async def query_device(serial_number: str) -> dict:
-    return dict(MOCK_ORDERS["ORD-MY-2001"])
+    return dict(MOCK_ORDERS["ORD-CN-2001"])
 
 
 @mcp.tool
 async def query_repair_status(order_id: str | None = None, serial_number: str | None = None) -> dict:
-    return {**MOCK_ORDERS["ORD-MY-2001"], "status": "IN_REPAIR", "status_label": "维修处理中"}
+    return {**MOCK_ORDERS["ORD-CN-2001"], "status": "IN_REPAIR", "status_label": "维修处理中"}
 
 
 if __name__ == "__main__":

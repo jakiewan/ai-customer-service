@@ -22,8 +22,8 @@ async def test_disconnected_request_is_indeterminate_and_does_not_block_next_req
     app = create_app(Settings(_env_file=None, persistence_mode=backend, database_url=database_url))
     async with app.router.lifespan_context(app):
         service = app.state.conversation_service
-        conversation = await service.create_conversation("owner", CreateConversationRequest(market="MY"))
-        request = MessageRequest(client_message_id="disconnected", message="申请维修，订单 ORD-MY-2001，手机无法开机")
+        conversation = await service.create_conversation("owner", CreateConversationRequest(market="CN"))
+        request = MessageRequest(client_message_id="disconnected", message="申请维修，订单 ORD-CN-2001，手机无法开机")
         stream = service.stream_message(conversation.conversation_id, "owner", request, "disconnect-trace")
         assert (await anext(stream))["event"] == "status"
         await stream.aclose()
@@ -40,7 +40,7 @@ async def test_disconnected_request_is_indeterminate_and_does_not_block_next_req
 async def test_graph_checkpoint_history_is_bounded_but_api_history_is_preserved():
     app = create_app(Settings(_env_file=None))
     service = app.state.conversation_service
-    conversation = await service.create_conversation("owner", CreateConversationRequest(market="MY"))
+    conversation = await service.create_conversation("owner", CreateConversationRequest(market="CN"))
     for index in range(25):
         _ = [event async for event in service.stream_message(conversation.conversation_id, "owner",
              MessageRequest(client_message_id=f"turn-{index}", message="你好"), "history-trace")]
@@ -53,7 +53,7 @@ async def test_graph_checkpoint_history_is_bounded_but_api_history_is_preserved(
 async def test_capacity_rejection_does_not_claim_request_and_disconnect_releases_slot():
     app = create_app(Settings(_env_file=None, max_active_runs=1))
     service = app.state.conversation_service
-    conversation = await service.create_conversation("owner", CreateConversationRequest(market="MY"))
+    conversation = await service.create_conversation("owner", CreateConversationRequest(market="CN"))
     first = service.stream_message(conversation.conversation_id, "owner", MessageRequest(client_message_id="held", message="你好"), "held")
     await anext(first)
     request = MessageRequest(client_message_id="capacity", message="你好")
@@ -77,7 +77,7 @@ async def test_total_timeout_is_audited_and_uncertain_request_is_not_reexecuted(
             async for event in original(*args, **kwargs):
                 yield event
         graph.astream = slow
-        conv = await service.create_conversation("owner", CreateConversationRequest(market="MY"))
+        conv = await service.create_conversation("owner", CreateConversationRequest(market="CN"))
         request = MessageRequest(client_message_id="timed-out", message="你好")
         events = [event async for event in service.stream_message(conv.conversation_id, "owner", request, "timeout")]
         assert any(event["event"] == "error" and event["data"]["code"] == "AGENT_RUN_TIMEOUT" for event in events)
@@ -96,8 +96,8 @@ from agent_service.app.schemas import MessageRequest
 async def run():
     store = PostgresStore(os.environ['GLOBALCARE_TEST_DATABASE_URL'])
     await store.open()
-    conversation = await store.create_conversation(token='owner',channel='WEB_CHAT',market='MY',language='zh-CN')
-    request = MessageRequest(client_message_id='orphan',message='申请维修，订单 ORD-MY-2001，手机无法开机')
+    conversation = await store.create_conversation(token='owner',channel='WEB_CHAT',market='CN',language='zh-CN')
+    request = MessageRequest(client_message_id='orphan',message='申请维修，订单 ORD-CN-2001，手机无法开机')
     async with store.message_lock(conversation.conversation_id,'owner'):
         fingerprint = hashlib.sha256(json.dumps(request.model_dump(mode='json'),sort_keys=True).encode()).hexdigest()
         await store.append_user_message(conversation.conversation_id,'owner','orphan',request.message,fingerprint)
@@ -119,7 +119,7 @@ asyncio.run(run())
             uri = "/api/v1/conversations/" + conversation_id
             headers = {"X-Demo-Token": "owner"}
             response = restarted.post(uri + "/messages/stream", headers=headers,
-                                      json={"client_message_id": "orphan", "message": "申请维修，订单 ORD-MY-2001，手机无法开机"})
+                                      json={"client_message_id": "orphan", "message": "申请维修，订单 ORD-CN-2001，手机无法开机"})
             assert '"code": "REQUEST_INDETERMINATE"' in response.text
             following = restarted.post(uri + "/messages/stream", headers=headers, json={"client_message_id": "next", "message": "你好"})
             assert "event: error" not in following.text

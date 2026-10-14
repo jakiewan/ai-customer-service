@@ -23,7 +23,7 @@ def keys():
 def bearer(key, **patch):
     claims = {
         "iss": "https://login.example.test", "aud": "globalcare-agent",
-        "sub": "user-one", "tenant_id": "tenant-one", "customer_id": "CUS-MY-001",
+        "sub": "user-one", "tenant_id": "tenant-one", "customer_id": "CUS-CN-002",
         "iat": int(time.time()), "exp": int(time.time()) + 300,
         **patch,
     }
@@ -37,7 +37,7 @@ def test_jwt_refresh_keeps_identity_but_other_tenant_cannot_read_conversation(ke
         jwt_issuer="https://login.example.test", jwt_audience="globalcare-agent",
     ))
     with TestClient(app) as client:
-        created = client.post("/api/v1/conversations", headers=bearer(key), json={"market": "MY"})
+        created = client.post("/api/v1/conversations", headers=bearer(key), json={"market": "CN"})
         assert created.status_code == 200
         uri = "/api/v1/conversations/" + created.json()["data"]["conversation_id"]
         assert client.get(uri, headers=bearer(key, exp=int(time.time()) + 600)).status_code == 200

@@ -39,13 +39,13 @@ MOCK_ORDERS: dict[str, dict[str, Any]] = {
         "purchase_date": "2026-02-10",
         "repair_status": "RECEIVED",
     },
-    "ORD-MY-2001": {
-        "order_id": "ORD-MY-2001",
-        "customer_id": "CUS-MY-001",
+    "ORD-CN-2001": {
+        "order_id": "ORD-CN-2001",
+        "customer_id": "CUS-CN-002",
         "tenant_id": "tenant-one",
-        "market": Market.MY.value,
+        "market": Market.CN.value,
         "product_model": "Xiaomi 15",
-        "serial_number": "SN-MY-2001",
+        "serial_number": "SN-CN-2001",
         "purchase_date": "2026-03-12",
         "repair_status": "IN_REPAIR",
     },

@@ -18,7 +18,7 @@ def test_strict_pgvector_unavailable_does_not_silently_use_memory():
 
 
 def test_strict_policy_rejects_documents_without_version(tmp_path):
-    (tmp_path / "bad.md").write_text("---\nmarket: MY\ntitle: policy\n---\nWarranty 24 months", encoding="utf-8")
+    (tmp_path / "bad.md").write_text("---\nmarket: CN\ntitle: policy\n---\nWarranty 24 months", encoding="utf-8")
     with pytest.raises(ValueError):
         PolicyStore(tmp_path, allow_fallback=False)
 
@@ -28,10 +28,10 @@ def test_retriever_checks_market_even_when_backend_filter_is_broken():
 
     class WrongMarketDatabase:
         def similarity_search(self, *_args, **_kwargs):
-            return [Document(page_content="保修期 99 个月", metadata={"market": "CN", "policy_id": "wrong", "version": "1", "title": "CN", "language": "zh-CN", "goodsid": "65539", "sales_channel": "MALL"})]
+            return [Document(page_content="保修期 99 个月", metadata={"market": "US", "policy_id": "wrong", "version": "1", "title": "CN", "language": "zh-CN", "goodsid": "65539", "sales_channel": "MALL"})]
 
     store.pg_vector_store = WrongMarketDatabase()
-    assert store.retrieve("手机保修期", "MY", goodsid="65539", sales_channel="MALL") == []
+    assert store.retrieve("手机保修期", "CN", goodsid="65539", sales_channel="MALL") == []
 
 
 def test_policy_answer_uses_document_duration_not_twelve_month_constant(tmp_path):

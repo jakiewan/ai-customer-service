@@ -25,7 +25,7 @@ def run() -> None:
     with httpx.Client(timeout=20) as client:
         client.get(f"{BASE_URL}/healthz").raise_for_status()
         created = client.post(f"{BASE_URL}/api/v1/conversations", headers=HEADERS,
-                              json={"market": "MY", "goodsid": "65539", "sales_channel": "MALL", "language": "zh-CN"})
+                              json={"goodsid": "65539", "sales_channel": "MALL", "language": "zh-CN"})
         created.raise_for_status()
         cid = created.json()["data"]["conversation_id"]
         uri = f"{BASE_URL}/api/v1/conversations/{cid}"
@@ -39,7 +39,7 @@ def run() -> None:
             return events
         policy = ask("手机保修多久", "policy")
         evidence = next(data for name, data in policy if name == "policy_evidence")
-        assert (evidence["market"], evidence["goodsid"], evidence["sales_channel"]) == ("MY", "65539", "MALL")
+        assert (evidence["market"], evidence["goodsid"], evidence["sales_channel"]) == ("CN", "65539", "MALL")
         assert policy[-1][1]["action_links"] == []
         entry = ask("我要申请维修", "entry")
         expected = os.getenv("GLOBALCARE_AFTERSALES_URL", "")

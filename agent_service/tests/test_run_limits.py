@@ -9,7 +9,7 @@ def send(client, settings, message):
     created = client.post(
         "/api/v1/conversations",
         headers=headers,
-        json={"market": "MY", "goodsid": "65539", "sales_channel": "MALL"},
+        json={"market": "CN", "goodsid": "65539", "sales_channel": "MALL"},
     )
     uri = "/api/v1/conversations/" + created.json()["data"]["conversation_id"]
     return client.post(
@@ -44,7 +44,7 @@ def test_each_new_message_gets_its_own_step_budget():
         created = client.post(
             "/api/v1/conversations",
             headers=headers,
-            json={"market": "MY", "goodsid": "65539", "sales_channel": "MALL"},
+            json={"market": "CN", "goodsid": "65539", "sales_channel": "MALL"},
         )
         uri = "/api/v1/conversations/" + created.json()["data"]["conversation_id"]
         for i in range(4):
