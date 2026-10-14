@@ -37,7 +37,7 @@ class AgentModel:
                         "system",
                         (
                             "你是售后客服路由器。只输出结构化字段，不回答用户问题。\n"
-                            "意图只能是 FAQ、TROUBLESHOOTING、REPAIR_STATUS、CASE_REQUEST、GENERAL。\n"
+                            "意图只能是 FAQ、TROUBLESHOOTING、REPAIR_STATUS、AFTERSALES_LINK、PURCHASE_LINK、GENERAL。\n"
                             "哪个国家购买就使用哪个国家售后，不推断未知市场。"
                         ),
                     ),

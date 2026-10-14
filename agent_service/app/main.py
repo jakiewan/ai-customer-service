@@ -2,7 +2,6 @@ import asyncio
 import json
 import logging
 import re
-import httpx
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Annotated
@@ -14,7 +13,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
 
 from .auth import Principal, authenticate
-from .business import build_business_gateway
 from .checkpointer import open_checkpointer, to_psycopg_dsn
 from .config import Settings, get_settings
 from .constants import ErrorCode
@@ -25,7 +23,6 @@ from .postgres_store import PostgresStore
 from .schemas import (
     ApiResponse,
     AuditEventView,
-    CaseDraftView,
     ConversationResponse,
     ConversationView,
     CreateConversationRequest,
@@ -33,7 +30,7 @@ from .schemas import (
     MessageRequest,
 )
 from .service import ConversationService
-from .store import CaseDraftNotFoundError, ConversationNotFoundError, InMemoryStore
+from .store import ConversationNotFoundError, InMemoryStore
 
 logger = logging.getLogger(__name__)
 
@@ -53,13 +50,11 @@ def _status_for_error(code: str) -> int:
         ErrorCode.VALIDATION_ERROR.value: 400,
         ErrorCode.UNAUTHORIZED.value: 401,
         ErrorCode.CONVERSATION_NOT_FOUND.value: 404,
-        ErrorCode.CASE_DRAFT_NOT_FOUND.value: 404,
         ErrorCode.POLICY_NOT_FOUND.value: 422,
         ErrorCode.TOOL_TIMEOUT.value: 504,
         ErrorCode.TOOL_UNAVAILABLE.value: 503,
         ErrorCode.AGENT_LIMIT_EXCEEDED.value: 429,
         ErrorCode.AGENT_BUDGET_EXCEEDED.value: 429,
-        ErrorCode.CASE_DRAFT_VALIDATION_FAILED.value: 422,
     }.get(code, 500)
 
 
@@ -77,26 +72,11 @@ async def _postgres_ready(database_url: str) -> bool:
         return False
 
 
-async def _mcp_ready(mcp_url: str, service_token: str = "") -> bool:
-    try:
-        from langchain_mcp_adapters.client import MultiServerMCPClient
-
-        connection = {"transport": "streamable_http", "url": mcp_url}
-        if service_token:
-            connection["headers"] = {"Authorization": "Bearer " + service_token}
-        client = MultiServerMCPClient({"globalcare": connection})
-        async with asyncio.timeout(3):
-            names = {tool.name for tool in await client.get_tools()}
-        return {"query_order", "query_device", "query_repair_status"}.issubset(names) and "create_case_draft" not in names
-    except Exception:  # noqa: BLE001 - MCP 会话/传输任意失败都应被报告为 down。
-        return False
-
-
 def create_app(settings: Settings | None = None) -> FastAPI:
     app = FastAPI(
         title="GlobalCare Agent API",
         version="0.1.0",
-        description="售后 Case 智能受理 Agent 的 REST 与 SSE 接口。",
+        description="商品与售后知识咨询及官方入口引导的 REST 与 SSE 接口。",
     )
     app_settings = settings or get_settings()
     allowed_origins = [origin.strip() for origin in app_settings.cors_origins.split(",") if origin.strip()]
@@ -127,33 +107,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         model_name=app_settings.minimax_model,
         temperature=app_settings.llm_temperature,
     )
-    query_mode = "mcp" if app_settings.mcp_mode.lower() in {"http", "streamable_http"} else app_settings.business_mode
-    query_gateway = build_business_gateway(
-        query_mode,
-        base_url=app_settings.business_base_url,
-        timeout_seconds=app_settings.business_timeout_seconds,
-        mcp_url=app_settings.mcp_url,
-        mcp_token=app_settings.mcp_token,
-        business_token=app_settings.business_token,
-    )
-    draft_gateway = build_business_gateway(
-        app_settings.business_mode,
-        base_url=app_settings.business_base_url,
-        timeout_seconds=app_settings.business_timeout_seconds,
-        mcp_url=app_settings.mcp_url,
-        mcp_token=app_settings.mcp_token,
-        business_token=app_settings.business_token,
-    )
     store = (PostgresStore(app_settings.database_url, app_settings.message_lock_timeout_seconds)
              if app_settings.persistence_mode == "postgres" else InMemoryStore(app_settings.message_lock_timeout_seconds))
     graph_kwargs = {
         "model": model,
         "policy_store": policy_store,
-        "query_gateway": query_gateway,
-        "draft_gateway": draft_gateway,
+        "purchase_url": app_settings.purchase_url,
+        "aftersales_url": app_settings.aftersales_url,
         "max_steps": app_settings.max_graph_steps,
-        "max_tool_calls": app_settings.max_tool_calls,
-        "draft_store": store,
     }
     graph = build_graph(**graph_kwargs)
     conversation_service = ConversationService(
@@ -208,10 +169,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def conversation_not_found_handler(request: Request, _: ConversationNotFoundError):
         return _error_response(ErrorCode.CONVERSATION_NOT_FOUND, "会话不存在", _trace_id(request))
 
-    @app.exception_handler(CaseDraftNotFoundError)
-    async def draft_not_found_handler(request: Request, _: CaseDraftNotFoundError):
-        return _error_response(ErrorCode.CASE_DRAFT_NOT_FOUND, "Case Draft 不存在", _trace_id(request))
-
     @app.exception_handler(PermissionError)
     async def permission_exception_handler(request: Request, _: PermissionError):
         return _error_response(ErrorCode.UNAUTHORIZED, "Demo Token 无效或无权访问", _trace_id(request))
@@ -237,34 +194,19 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if app_settings.policy_backend == "pgvector":
             try:
                 async with asyncio.timeout(4):
-                    evidence = await asyncio.to_thread(policy_store.retrieve, "手机保修政策", "MY", 1)
+                    evidence = await asyncio.to_thread(policy_store.retrieve, "手机保修政策", "MY", 1, goodsid="65539", sales_channel="MALL")
                 pgvector_state = "up" if evidence and not policy_store.degraded else "down"
             except Exception:
                 pgvector_state = "down"
-        mcp_state = "degraded"
-        if app_settings.mcp_mode.lower() in {"http", "streamable_http"}:
-            mcp_state = "up" if await _mcp_ready(app_settings.mcp_url, app_settings.mcp_token) else "down"
         model_state = "configured" if app_settings.llm_mode.lower() == "mock" or app_settings.minimax_api_key else "missing"
-        business_state = "mock"
-        if app_settings.business_mode == "http":
-            try:
-                async with httpx.AsyncClient(timeout=3) as client:
-                    response = await client.get(app_settings.business_base_url.rstrip("/") + app_settings.business_health_path,
-                                                headers={"Authorization": "Bearer " + app_settings.business_token} if app_settings.business_token else {})
-                business_state = "up" if response.is_success else "down"
-            except Exception:
-                business_state = "down"
-        ready = (store_state == "up" and model_state != "missing" and business_state != "down" and
-                 postgres_state != "down" and (app_settings.policy_backend != "pgvector" or pgvector_state == "up") and
-                 (app_settings.mcp_mode == "mock" or mcp_state == "up"))
+        ready = (store_state == "up" and model_state != "missing" and postgres_state != "down" and
+                 (app_settings.policy_backend != "pgvector" or pgvector_state == "up"))
         payload = ApiResponse(
             data={
                 "status": "ready" if ready else "not_ready",
                 "store": store_state,
-                "business": business_state,
                 "postgres": postgres_state,
                 "pgvector": pgvector_state,
-                "mcp": mcp_state,
                 "model_config": model_state,
             },
             trace_id=trace_id,
@@ -324,15 +266,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         token: Principal = Depends(demo_token_dependency),
     ):
         result = await conversation_service.audit_views(conversation_id, token.subject_key)
-        return ApiResponse(data=result, trace_id=_trace_id(request))
-
-    @app.get("/api/v1/case-drafts/{case_draft_id}", response_model=ApiResponse[CaseDraftView], tags=["case-draft"])
-    async def get_case_draft(
-        request: Request,
-        case_draft_id: UUID,
-        token: Principal = Depends(demo_token_dependency),
-    ):
-        result = await conversation_service.draft_view(case_draft_id, token.subject_key)
         return ApiResponse(data=result, trace_id=_trace_id(request))
 
     return app

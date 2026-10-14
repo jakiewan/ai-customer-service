@@ -7,7 +7,7 @@
 实现要点:
 - 同一会话复用 conversation_id,跨轮由 LangGraph checkpointer 维护状态。
 - client_message_id 用 uuid4,避免触发幂等重放。
-- SSE 流按事件分流:status / tool_call / policy_evidence / token / case_draft_created /
+- SSE 流按事件分流:status / tool_call / policy_evidence / token /
   human_required / error / done。
 """
 
@@ -26,7 +26,7 @@ def create_conversation(client: httpx.Client, market: str) -> str:
     response = client.post(
         f"{BASE_URL}/api/v1/conversations",
         headers=HEADERS,
-        json={"channel": "WEB_CHAT", "market": market, "language": "zh-CN"},
+        json={"channel": "WEB_CHAT", "market": market, "language": "zh-CN", "goodsid": "65539", "sales_channel": "MALL"},
     )
     response.raise_for_status()
     return response.json()["data"]["conversation_id"]
@@ -74,13 +74,13 @@ def _render_event(event_name: str, payload: dict, reply_chunks: list[str]) -> No
         delta = payload.get("delta", "")
         reply_chunks.append(delta)
         print(delta, end="", flush=True)
-    elif event_name == "case_draft_created":
-        print(f"\n  ✓ Case Draft 已生成: {payload.get('case_draft_id')}", flush=True)
     elif event_name == "human_required":
         print(f"\n  ⚠ 需人工介入: {payload.get('reason')}", flush=True)
     elif event_name == "error":
         print(f"\n  ✗ 错误: {payload.get('message')}", flush=True)
     elif event_name == "done":
+        for link in payload.get("action_links", []):
+            print(f"\n  · {link['label']}: {link['url']}", flush=True)
         print(f"\n  · 会话结束: status={payload.get('status')}", flush=True)
 
 

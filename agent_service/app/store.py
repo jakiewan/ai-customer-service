@@ -21,6 +21,7 @@ class StoredMessage:
     content: str
     created_at: datetime = field(default_factory=now_utc)
     citations: list[dict[str, Any]] = field(default_factory=list)
+    action_links: list[dict[str, Any]] = field(default_factory=list)
 
 
 @dataclass
@@ -33,7 +34,6 @@ class ConversationRecord:
     status: ConversationStatus = ConversationStatus.AI_ACTIVE
     messages: list[StoredMessage] = field(default_factory=list)
     state: dict[str, Any] = field(default_factory=dict)
-    case_draft_id: UUID | None = None
     processed_messages: dict[str, dict[str, Any]] = field(default_factory=dict)
     request_fingerprints: dict[str, str] = field(default_factory=dict)
     created_at: datetime = field(default_factory=now_utc)
@@ -53,10 +53,6 @@ class ConversationNotFoundError(LookupError):
     pass
 
 
-class CaseDraftNotFoundError(LookupError):
-    pass
-
-
 class StoreRequestError(ValueError):
     def __init__(self, message: str, *, code: str, retryable: bool = False):
         super().__init__(message)
@@ -69,9 +65,7 @@ class InMemoryStore:
 
     def __init__(self, lock_timeout_seconds: float = 5) -> None:
         self._conversations: dict[UUID, ConversationRecord] = {}
-        self._drafts: dict[UUID, dict[str, Any]] = {}
         self._audits: dict[UUID, list[AuditEventRecord]] = {}
-        self._draft_writes: dict[str, dict[str, Any] | None] = {}
         self._lock = asyncio.Lock()
         self.lock_timeout_seconds = lock_timeout_seconds
         self._message_locks: WeakValueDictionary = WeakValueDictionary()
@@ -89,7 +83,7 @@ class InMemoryStore:
         finally:
             lock.release()
 
-    async def create_conversation(self, *, token: str, channel: Channel, market: str | None, language: str | None, actor_context: dict[str, str] | None = None) -> ConversationRecord:
+    async def create_conversation(self, *, token: str, channel: Channel, market: str | None, language: str | None, actor_context: dict[str, str] | None = None, goodsid: str | None = None, sales_channel: str | None = None) -> ConversationRecord:
         async with self._lock:
             conversation = ConversationRecord(
                 conversation_id=uuid4(), token=token, channel=channel, market=market, language=language
@@ -99,6 +93,8 @@ class InMemoryStore:
                 "messages": [],
                 "market": market,
                 "language": language,
+                "goodsid": goodsid,
+                "sales_channel": sales_channel,
                 "status": conversation.status.value,
                 **(actor_context or {}),
             }
@@ -144,19 +140,12 @@ class InMemoryStore:
     ) -> None:
         async with self._lock:
             conversation = await self.get_conversation(conversation_id, token)
-            draft = state.get("case_draft")
-            case_id = state.get("case_draft_id")
-            existing = self._drafts.get(UUID(case_id)) if case_id else None
-            if existing and draft and (str(existing["conversation_id"]) != str(conversation_id) or existing["draft_fingerprint"] != draft["draft_fingerprint"]):
-                raise StoreRequestError("草稿 ID 与现有归属冲突，需要核对下游", code="DRAFT_CONFLICT")
             conversation.state = state
             conversation.status = ConversationStatus(state.get("conversation_status", ConversationStatus.AI_ACTIVE.value))
             conversation.market = state.get("market") or conversation.market
             conversation.language = state.get("language") or conversation.language
-            case_id = state.get("case_draft_id")
-            conversation.case_draft_id = UUID(case_id) if case_id else None
             conversation.messages.append(
-                StoredMessage(uuid4(), MessageRole.ASSISTANT, reply, citations=citations)
+                StoredMessage(uuid4(), MessageRole.ASSISTANT, reply, citations=citations, action_links=result.get("action_links", []))
             )
             conversation.processed_messages[client_message_id] = result
             self._audits[conversation_id].append(AuditEventRecord(
@@ -166,31 +155,6 @@ class InMemoryStore:
                  "error_code": (result.get("error") or {}).get("code")},
             ))
             conversation.updated_at = now_utc()
-            draft = state.get("case_draft")
-            if draft and conversation.case_draft_id:
-                self._drafts[conversation.case_draft_id] = draft
-
-    async def get_draft(self, draft_id: UUID) -> dict[str, Any]:
-        draft = self._drafts.get(draft_id)
-        if draft is None:
-            raise CaseDraftNotFoundError(str(draft_id))
-        return draft
-
-    async def reserve_draft_write(self, payload: dict[str, Any]):
-        async with self._lock:
-            fingerprint = payload["draft_fingerprint"]
-            if fingerprint in self._draft_writes:
-                result = self._draft_writes[fingerprint]
-                if result is None:
-                    raise StoreRequestError("上次草稿写入结果未确定，需要核对下游", code="DRAFT_WRITE_INDETERMINATE")
-                return {**result, "idempotent_replay": True}
-            self._draft_writes[fingerprint] = None
-        return None
-
-    async def confirm_draft_write(self, fingerprint: str, result: dict[str, Any]):
-        async with self._lock:
-            self._draft_writes[fingerprint] = result
-
     async def record_audit(
         self,
         conversation_id: UUID,

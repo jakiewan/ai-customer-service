@@ -426,27 +426,11 @@
     }
     .policy-card strong { display: block; color: #355d9d; font-size: 11px; }
     .policy-card p { margin: 6px 0; color: #6f809b; font-size: 10px; line-height: 1.6; }
-    .policy-meta { display: flex; justify-content: space-between; color: #9baecc; font-size: 9px; }
+    .policy-meta { display: flex; flex-wrap: wrap; gap: 6px; justify-content: space-between; color: #9baecc; font-size: 9px; }
 
-    .draft-card {
-      border: 1px solid #f0e2bd;
-      border-radius: 10px;
-      background: #fffdf7;
-      overflow: hidden;
-    }
-    .draft-head {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 11px 12px;
-      border-bottom: 1px solid #f3ead5;
-    }
-    .draft-head strong { color: #795b24; font-size: 11px; }
-    .draft-status { padding: 4px 7px; color: var(--warning); border-radius: 999px; background: var(--warning-soft); font-size: 9px; font-weight: 700; }
-    .draft-body { padding: 11px 12px; }
-    .draft-row { display: flex; justify-content: space-between; gap: 10px; padding: 5px 0; color: #7e8da3; font-size: 10px; }
-    .draft-row b { color: #4e5f79; font-weight: 600; text-align: right; }
-    .draft-foot { padding: 10px 12px; border-top: 1px solid #f3ead5; color: #aa966c; font-size: 9px; line-height: 1.5; }
+    .action-links { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 10px; }
+    .action-links a { color: #007c86; text-decoration: underline; }
+
 
     .notice {
       padding: 11px 12px;
@@ -498,7 +482,6 @@
 
         <div class="nav-label">WORKSPACE</div>
         <button class="nav-item active"><span class="nav-icon">◈</span><span>AI 智能客服</span></button>
-        <button class="nav-item"><span class="nav-icon">▤</span><span>案例草稿</span></button>
         <button class="nav-item"><span class="nav-icon">⌁</span><span>知识检索</span></button>
         <button class="nav-item"><span class="nav-icon">◌</span><span>运行轨迹</span></button>
 
@@ -512,13 +495,25 @@
         <header class="topbar">
           <div class="topbar-title">
             <h1>售后智能客服</h1>
-            <p>AI 负责售后问题分析与案例整理</p>
+            <p>知识咨询与官方自助办理入口</p>
           </div>
           <div class="topbar-actions">
             <div class="select-wrap">
-              <select v-model="market">
+              <select v-model="market" aria-label="购买国家">
                 <option value="MY">马来西亚 · MY</option>
                 <option value="CN">中国 · CN</option>
+              </select>
+            </div>
+            <div class="select-wrap">
+              <select v-model="goodsid" aria-label="三级品类">
+                <option value="65539">手机 · 65539</option><option value="65540">电脑 · 65540</option>
+                <option value="65541">空调 · 65541</option><option value="65542">冰箱 · 65542</option>
+                <option value="65543">洗衣机 · 65543</option>
+              </select>
+            </div>
+            <div class="select-wrap">
+              <select v-model="salesChannel" aria-label="销售渠道">
+                <option value="MALL">商城</option><option value="DIRECT">自营店</option><option value="AUTHORIZED">授权店</option>
               </select>
             </div>
             <button class="channel-button" type="button">人工客服入口</button>
@@ -532,7 +527,7 @@
                 <div class="agent-avatar">G</div>
                 <div>
                   <strong>GlobalCare AI Agent</strong>
-                  <small>LangGraph 售后受理流程</small>
+                  <small>LangGraph 咨询与入口引导</small>
                 </div>
               </div>
               <div class="online-pill">AI 在线</div>
@@ -547,6 +542,9 @@
                   <div class="message-meta">{{ item.role === 'assistant' ? 'GlobalCare AI' : '你' }} · {{ item.time }}</div>
                   <div v-if="item.typing" class="typing"><i></i><i></i><i></i></div>
                   <div v-else class="bubble">{{ item.content }}</div>
+                  <div v-if="item.action_links && item.action_links.length" class="action-links">
+                    <a v-for="link in item.action_links" :key="link.service_type" :href="link.url" target="_blank" rel="noopener noreferrer">{{ link.label }}</a>
+                  </div>
                   <div v-if="item.citation" class="citation">
                     <div class="citation-title">政策依据 · {{ item.citation.title }}</div>
                     <p>{{ item.citation.excerpt }}</p>
@@ -586,30 +584,19 @@
               <div v-if="policy" class="policy-card">
                 <strong>{{ policy.title }}</strong>
                 <p>{{ policy.excerpt }}</p>
-                <div class="policy-meta"><span>市场：{{ market }}</span><span>版本：{{ policy.version }}</span></div>
+                <div class="policy-meta"><span>国家：{{ policy.market }}</span><span>品类：{{ policy.goodsid }}</span><span>渠道：{{ policy.sales_channel }}</span><span>版本：{{ policy.version }}</span></div>
               </div>
               <div v-else class="notice">当前问题尚未触发政策检索。</div>
             </div>
 
             <div class="insight-card">
-              <div class="card-title">Case Draft <span>{{ draft ? '已生成草稿' : '尚未生成' }}</span></div>
-              <div v-if="draft" class="draft-card">
-                <div class="draft-head">
-                  <strong>{{ draft.id }}</strong>
-                  <span class="draft-status">草稿已保存</span>
-                </div>
-                <div class="draft-body">
-                  <div class="draft-row"><span>问题类型</span><b>{{ draft.category }}</b></div>
-                  <div class="draft-row"><span>问题摘要</span><b>{{ draft.summary }}</b></div>
-                  <div class="draft-row"><span>建议处理</span><b>{{ draft.resolution }}</b></div>
-                  <div class="draft-row"><span>市场</span><b>{{ draft.market || market }}</b></div>
-                </div>
-                <div class="draft-foot">Agent 已完成信息整理并保存草稿，后续由售后受理流程处理。</div>
+              <div class="card-title">官方入口 <span>{{ actions.length ? '可前往办理' : '待选择' }}</span></div>
+              <div class="action-links" v-if="actions.length">
+                <a v-for="link in actions" :key="link.service_type" :href="link.url" target="_blank" rel="noopener noreferrer">{{ link.label }}</a>
               </div>
-              <div v-else class="notice">只有用户明确申请售后且信息校验通过后，才会生成 Case Draft。</div>
+              <div v-else class="notice">明确购买或申请诉求时提供已配置的官方入口。</div>
             </div>
-
-            <div class="notice"><b>工程边界：</b>模型识别意图；LangGraph 检索证据并受控保存草稿；正式案例与工单属于下游系统。当前为脱敏模拟数据。</div>
+            <div class="notice">政策按国家、三级品类和销售渠道匹配。购买与售后申请由你在官方页面完成。</div>
           </aside>
         </div>
       </main>
@@ -623,6 +610,8 @@
       setup() {
         const input = ref("");
         const market = ref("MY");
+        const goodsid = ref("65539");
+        const salesChannel = ref("MALL");
         const isTyping = ref(false);
         const currentStatus = ref("AI_ACTIVE");
         const messageList = ref(null);
@@ -648,7 +637,7 @@
             id: 1,
             role: "assistant",
             time: "现在",
-            content: "你好，我是 GlobalCare 售后智能客服。你可以咨询故障排查、保修政策或维修进度。需要申请售后时，我会先整理 Case Draft。"
+            content: "你好，我是 GlobalCare 售后智能客服。你可以咨询故障排查、保修政策或维修进度。需要购买或申请售后时，我会提供已配置的官方入口。"
           }
         ]);
 
@@ -657,7 +646,7 @@
         ]);
 
         const policy = ref(null);
-        const draft = ref(null);
+        const actions = ref([]);
 
         function nowTime() {
           return new Date().toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" });
@@ -708,7 +697,7 @@
           const response = await fetch(apiBaseUrl + "/api/v1/conversations", {
             method: "POST",
             headers: { "Content-Type": "application/json", "X-Demo-Token": demoToken },
-            body: JSON.stringify({ channel: "WEB_CHAT", market: market.value, language: "zh-CN" })
+            body: JSON.stringify({ channel: "WEB_CHAT", market: market.value, language: "zh-CN", goodsid: goodsid.value, sales_channel: salesChannel.value })
           });
           if (!response.ok) throw new Error("无法创建 AI 客服会话");
           const payload = await response.json();
@@ -737,6 +726,7 @@
           trace.value = [{ key: "api-active", name: "AI_ACTIVE", detail: "正在连接 Agent 服务", state: "active" }];
           // 政策引用属于当前消息，不得把上一轮证据带到新问题。
           policy.value = null;
+          actions.value = [];
           messages.value.push({ id: Date.now() + 1, role: "assistant", time: nowTime(), typing: true });
           scrollToBottom();
           try {
@@ -748,6 +738,8 @@
                 client_message_id: "web-" + Date.now(),
                 message: userText,
                 market: market.value,
+                goodsid: goodsid.value,
+                sales_channel: salesChannel.value,
                 language: "zh-CN"
               })
             });
@@ -770,7 +762,7 @@
                 const data = JSON.parse(dataLine.replace("data: ", ""));
                 if (eventName === "status") updateTraceFromApi(data);
                 if (eventName === "policy_evidence") {
-                  policy.value = { title: data.title, version: data.version, excerpt: data.excerpt, backend: data.retrieval_backend || '政策证据' };
+                  policy.value = { title: data.title, version: data.version, excerpt: data.excerpt, market: data.market, goodsid: data.goodsid, sales_channel: data.sales_channel, backend: data.retrieval_backend || '政策证据' };
                 }
                 if (eventName === "token") appendToken(data.delta || "");
                 if (eventName === "error") {
@@ -779,23 +771,17 @@
                   pushAssistant((data.message || "Agent 暂时无法处理") + (data.trace_id ? "\n请求追踪号：" + data.trace_id : ""));
                   currentStatus.value = "FAILED";
                 }
-                if (eventName === "case_draft_created") {
-                  draft.value = {
-                    id: data.case_draft_id,
-                    category: "设备售后维修",
-                    summary: data.summary,
-                    resolution: "售后维修",
-                    market: data.market || market.value
-                  };
-                }
                 if (eventName === "done") {
                   receivedDone = true;
+                  actions.value = data.action_links || [];
+                  const last = messages.value[messages.value.length - 1];
+                  if (last && last.role === "assistant") last.action_links = actions.value;
                   currentStatus.value = data.status || currentStatus.value;
                   finishTrace();
                 }
               });
             }
-            if (!receivedDone) throw new Error("响应在完成前中断，请核对处理结果，不要直接重复提交维修申请。");
+            if (!receivedDone) throw new Error("响应在完成前中断，请核对处理结果后重试。");
           } catch (error) {
             const typingIndex = messages.value.findIndex((item) => item.typing);
             if (typingIndex >= 0) messages.value.splice(typingIndex, 1);
@@ -822,7 +808,9 @@
           messages,
           trace,
           policy,
-          draft,
+          actions,
+          goodsid,
+          salesChannel,
           quickPrompts,
           isTyping,
           currentStatus,

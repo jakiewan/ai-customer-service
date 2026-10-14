@@ -60,9 +60,15 @@ class Settings(BaseSettings):
     max_tool_calls: int = Field(default=3, ge=0, le=16)
     token_budget: int = Field(default=4096, ge=1)
     policy_top_k: int = 3
+    purchase_url: str = ""
+    aftersales_url: str = ""
 
     @model_validator(mode="after")
     def validate_auth(self):
+        for url in (self.purchase_url, self.aftersales_url):
+            parsed = urlparse(url)
+            if url and (parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password):
+                raise ValueError("官方入口必须是无内嵌凭证的 HTTPS URL")
         if self.auth_mode == "jwt" and not all((self.jwt_public_key, self.jwt_issuer, self.jwt_audience)):
             raise ValueError("JWT 模式必须提供公钥、issuer 和 audience")
         if self.auth_mode == "jwt":
@@ -77,12 +83,11 @@ class Settings(BaseSettings):
         if self.environment in {"staging", "production"}:
             required = (self.auth_mode == "jwt", self.persistence_mode == "postgres", self.checkpointer_mode == "postgres",
                         self.policy_backend == "pgvector", self.embedding_mode == "huggingface", not self.policy_allow_fallback,
-                        self.llm_mode == "minimax", bool(self.minimax_api_key), self.business_mode == "http",
-                        self.mcp_mode in {"http", "streamable_http"}, len(self.mcp_token) >= 32, len(self.business_token) >= 32)
+                        self.llm_mode == "minimax", bool(self.minimax_api_key))
             if not all(required):
-                raise ValueError("生产/预发必须使用 JWT、PostgreSQL、语义检索、严格政策、真实模型和带凭证的业务/MCP 服务")
+                raise ValueError("生产/预发必须使用 JWT、PostgreSQL、语义检索、严格政策和真实模型")
             origins = [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]
-            urls = [*origins, self.jwt_issuer, self.business_base_url, self.mcp_url, self.minimax_base_url]
+            urls = [*origins, self.jwt_issuer, self.minimax_base_url]
             if not origins or any(urlparse(url).scheme != "https" or not urlparse(url).hostname or
                                   urlparse(url).username or urlparse(url).password or "*" in url for url in urls):
                 raise ValueError("生产/预发来源和远程服务必须使用明确 HTTPS 地址，不允许 null、通配符或 URL 内凭证")

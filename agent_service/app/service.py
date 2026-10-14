@@ -11,14 +11,13 @@ from .constants import ConversationStatus, ErrorCode
 from .graph import AgentBudgetError, AgentRunError, GraphService
 from .schemas import (
     AuditEventView,
-    CaseDraftView,
     ConversationResponse,
     ConversationView,
     CreateConversationRequest,
     MessageRequest,
     MessageView,
     PolicyEvidence,
-    utc_now,
+    ActionLink,
 )
 from .store import InMemoryStore, StoreRequestError
 from .postgres_store import PostgresStore
@@ -30,11 +29,7 @@ NODE_LABELS = {
     "classify_intent": "识别用户意图",
     "collect_info": "收集必要信息",
     "retrieve_policy": "检索购买市场政策",
-    "query_business": "查询业务事实",
-    "build_case_draft": "生成结构化 Case Draft",
-    "validate_draft": "校验草稿字段与证据",
-    "create_case_draft": "保存 Case Draft",
-    "reuse_draft": "复用已有 Case Draft",
+    "resolve_link": "选择官方入口",
     "render_response": "生成客服回复",
 }
 
@@ -54,6 +49,8 @@ class ConversationService:
             market=request.market.value if request.market else None,
             language=request.language.value if request.language else None,
             actor_context=actor_context,
+            goodsid=request.goodsid,
+            sales_channel=request.sales_channel,
         )
         return ConversationResponse(
             conversation_id=record.conversation_id,
@@ -124,23 +121,24 @@ class ConversationService:
             "messages": [{"role": "user", "content": request.message}],
             "market": request.market.value if request.market else record.market,
             "language": request.language.value if request.language else record.language,
+            "goodsid": request.goodsid or record.state.get("goodsid"),
+            "sales_channel": request.sales_channel or record.state.get("sales_channel"),
             "trace_id": trace_id,
             "reply": None,
             "citations": [],
             "policy_evidence": [],
-            "business_results": [],
+            "action_links": [],
+            "result_type": "ANSWER",
             "human_required": False,
             "human_reason": None,
             "error_code": None,
             "tool_events": [],
-            # 运行预算按单条用户消息计算；订单、草稿和缺失字段才是跨轮状态。
+            # 运行预算按单条用户消息计算；政策适用条件和缺失字段才是跨轮状态。
             "step_count": 0,
             "tool_call_count": 0,
         }
         yield {"event": "status", "data": {"phase": "AI_ACTIVE", "message": "正在理解你的售后问题"}}
         final_state: dict[str, Any] | None = None
-        created_draft = False
-        draft_event: dict[str, Any] | None = None
         evidence_sent: set[str] = set()
         try:
             async for node_name, patch, current_state in self.graph_service.stream(
@@ -180,8 +178,6 @@ class ConversationService:
                     )
                     yield {"event": "tool_call", "data": tool_event}
                 evidence_to_send = patch.get("policy_evidence", [])
-                if current_state.get("intent") == "CASE_REQUEST":
-                    evidence_to_send = current_state.get("policy_evidence", []) if node_name == "query_business" and not current_state.get("human_required") else []
                 for evidence in evidence_to_send:
                     policy_id = str(evidence.get("policy_id"))
                     if policy_id not in evidence_sent:
@@ -198,27 +194,6 @@ class ConversationService:
                             },
                         )
                         yield {"event": "policy_evidence", "data": evidence}
-                if node_name == "create_case_draft" and patch.get("case_draft_id"):
-                    created_draft = True
-                    draft = patch.get("case_draft") or {}
-                    await self._audit(
-                        conversation_id,
-                        token,
-                        trace_id,
-                        "CASE_DRAFT_CREATED",
-                        {"case_draft_id": patch["case_draft_id"], "status": "DRAFT_CREATED"},
-                    )
-                    draft_event = {
-                        "event": "case_draft_created",
-                        "data": {
-                        "case_draft_id": patch["case_draft_id"],
-                        "status": ConversationStatus.CASE_DRAFT_CREATED.value,
-                        "review_required": True,
-                        "summary": draft.get("issue_summary", "已保存售后受理草稿"),
-                        "market": draft.get("market"),
-                        "idempotent_replay": bool(draft.get("idempotent_replay", False)),
-                        },
-                    }
         except Exception as exc:
             logger.error("Agent 运行失败: trace_id=%s type=%s", trace_id, type(exc).__name__)
             code = (ErrorCode.AGENT_BUDGET_EXCEEDED if isinstance(exc, AgentBudgetError) else
@@ -236,10 +211,9 @@ class ConversationService:
         result = {
             "reply": reply,
             "citations": [] if final_state.get("human_required") else final_state.get("citations", []),
-            "case_draft_id": final_state.get("case_draft_id"),
-            # 会话历史草稿 ID 不代表本轮发过草稿事件；保存实际事件用于幂等重放。
-            "case_draft_event": draft_event["data"] if draft_event else None,
-            "market": final_state.get("case_draft", {}).get("market") if final_state.get("case_draft") else final_state.get("market"),
+            "action_links": final_state.get("action_links", []),
+            "result_type": final_state.get("result_type", "ANSWER"),
+            "market": final_state.get("market"),
             "status": final_state.get("conversation_status", ConversationStatus.AI_ACTIVE.value),
             "human_required": bool(final_state.get("human_required")),
             "trace_id": trace_id,
@@ -253,8 +227,6 @@ class ConversationService:
             citations=result["citations"],
             result=result,
         )
-        if draft_event:
-            yield draft_event
         for chunk in _chunks(reply, 28):
             yield {"event": "token", "data": {"delta": chunk}}
         if final_state.get("human_required"):
@@ -264,8 +236,8 @@ class ConversationService:
             "data": {
                 "status": result["status"],
                 "trace_id": trace_id,
-                "case_draft_id": result.get("case_draft_id"),
-                "created_draft": created_draft,
+                "action_links": result["action_links"],
+                "result_type": result["result_type"],
             },
         }
 
@@ -280,24 +252,9 @@ class ConversationService:
             yield {"event": "token", "data": {"delta": chunk}}
         for evidence in result.get("citations", []):
             yield {"event": "policy_evidence", "data": evidence}
-        draft_data = result.get("case_draft_event")
-        if "case_draft_event" not in result and result.get("case_draft_id") and result.get("status") == ConversationStatus.CASE_DRAFT_CREATED.value:
-            # 兼容旧缓存；常规 FAQ/进度的 AI_ACTIVE 状态不能推导出草稿事件。
-            draft_data = {
-                "case_draft_id": result["case_draft_id"],
-                "status": ConversationStatus.CASE_DRAFT_CREATED.value,
-                "review_required": True,
-                "summary": "已复用现有 Case Draft",
-                "market": result.get("market"),
-            }
-        if draft_data:
-            yield {
-                "event": "case_draft_created",
-                "data": {**draft_data, "idempotent_replay": True},
-            }
         if result.get("human_required"):
             yield {"event": "human_required", "data": {"reason": "上次请求未能可靠处理"}}
-        yield {"event": "done", "data": {"status": result.get("status", "AI_ACTIVE"), "trace_id": trace_id}}
+        yield {"event": "done", "data": {"status": result.get("status", "COMPLETED"), "trace_id": trace_id, "action_links": result.get("action_links", []), "result_type": result.get("result_type", "ANSWER")}}
 
     async def _failure(self, conversation_id: UUID, token: str, message_id: str, trace_id: str, code: str, message: str):
         previous = await self.store.get_conversation(conversation_id, token)
@@ -319,6 +276,7 @@ class ConversationService:
                 content=item.content,
                 created_at=item.created_at,
                 citations=[PolicyEvidence.model_validate(citation) for citation in item.citations],
+                action_links=[ActionLink.model_validate(link) for link in item.action_links],
             )
             for item in record.messages
         ]
@@ -328,28 +286,9 @@ class ConversationService:
             market=record.market,
             language=record.language,
             messages=messages,
-            case_draft_id=record.case_draft_id,
+            goodsid=record.state.get("goodsid"),
+            sales_channel=record.state.get("sales_channel"),
             updated_at=record.updated_at,
-        )
-
-    async def draft_view(self, draft_id: UUID, token: str) -> CaseDraftView:
-        draft = await self.store.get_draft(draft_id)
-        await self.store.get_conversation(UUID(str(draft["conversation_id"])), token)
-        return CaseDraftView(
-            case_draft_id=draft_id,
-            status=draft.get("status", "DRAFT_CREATED"),
-            conversation_id=draft["conversation_id"],
-            issue_category=draft.get("issue_category", "general_issue"),
-            issue_summary=draft.get("issue_summary", ""),
-            suggested_resolution=draft.get("suggested_resolution", "repair"),
-            market=draft["market"],
-            product_model=draft.get("product_model"),
-            order_id_masked=draft.get("order_id_masked") or _mask(draft.get("order_id")),
-            serial_number_masked=draft.get("serial_number_masked") or _mask(draft.get("serial_number")),
-            missing_fields=draft.get("missing_fields", []),
-            policy_evidence=[PolicyEvidence.model_validate(item) for item in draft.get("policy_evidence", [])],
-            review_required=True,
-            created_at=draft.get("created_at") or utc_now(),
         )
 
     async def audit_views(self, conversation_id: UUID, token: str) -> list[AuditEventView]:
@@ -384,9 +323,3 @@ class ConversationService:
 
 def _chunks(text: str, size: int) -> list[str]:
     return [text[index : index + size] for index in range(0, len(text), size)] or [""]
-
-
-def _mask(value: str | None) -> str | None:
-    if not value:
-        return None
-    return f"{value[:3]}{'*' * max(len(value) - 5, 1)}{value[-2:]}"

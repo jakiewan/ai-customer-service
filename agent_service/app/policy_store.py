@@ -8,7 +8,7 @@ from langchain_core.documents import Document
 from langchain_core.embeddings import Embeddings
 from langchain_core.vectorstores import InMemoryVectorStore
 
-from .constants import Language, Market
+from .constants import CATEGORY_NAMES, Language, Market, SalesChannel
 from .schemas import PolicyEvidence
 
 logger = logging.getLogger(__name__)
@@ -86,6 +86,8 @@ def _load_frontmatter(path: Path) -> Document:
         metadata = yaml.safe_load(raw_metadata) or {}
     metadata["source"] = path.name
     metadata["market"] = str(metadata.get("market", "")).upper()
+    metadata["goodsid"] = str(metadata.get("goodsid", "")).strip()
+    metadata["sales_channel"] = str(metadata.get("sales_channel", "")).upper()
     return Document(page_content=body.strip(), metadata=metadata)
 
 
@@ -133,12 +135,15 @@ class PolicyStore:
             raise ValueError("严格模式要求非空政策目录")
         for document in documents:
             if not self._valid_document(document):
-                raise ValueError("政策必须有合法市场、版本、来源标识、语言和内容")
+                raise ValueError("政策必须有合法市场、三级品类 goodsid、销售渠道、版本、来源标识、语言和内容")
+        keys = [(doc.metadata["market"], doc.metadata["goodsid"], doc.metadata["sales_channel"]) for doc in documents]
+        if len(keys) != len(set(keys)):
+            raise ValueError("同一国家、三级品类 goodsid 和销售渠道只能配置一份政策")
         return documents
 
     def _valid_document(self, document: Document) -> bool:
         metadata = document.metadata
-        return 0 < len(document.page_content.strip()) <= 4000 and metadata.get("market") in {"CN", "MY"} and all(
+        return 0 < len(document.page_content.strip()) <= 4000 and metadata.get("market") in {"CN", "MY"} and metadata.get("goodsid") in CATEGORY_NAMES and metadata.get("sales_channel") in set(SalesChannel) and all(
             isinstance(metadata.get(key), str) and metadata[key].strip()
             for key in ("policy_id", "title", "version", "language")
         ) and (not self.require_approved or (metadata.get("approved") is True and metadata.get("simulated") is not True))
@@ -168,8 +173,8 @@ class PolicyStore:
         self.pg_vector_store.add_documents(self.documents, ids=ids)
         return len(self.documents)
 
-    def retrieve(self, query: str, market: Market | str | None, top_k: int = 3) -> list[PolicyEvidence]:
-        if not market:
+    def retrieve(self, query: str, market: Market | str | None, top_k: int = 3, *, goodsid: str | None = None, sales_channel: str | None = None) -> list[PolicyEvidence]:
+        if not all((market, goodsid, sales_channel)):
             return []
         lowered_query = query.lower()
         if any(term.lower() in lowered_query for term in (*UNSUPPORTED_POLICY_TERMS, *UNSUPPORTED_PRODUCT_TERMS)):
@@ -181,27 +186,28 @@ class PolicyStore:
         ):
             return []
         normalized_market = str(market).upper()
+        scope = {"market": normalized_market, "goodsid": goodsid, "sales_channel": sales_channel}
         candidate_docs: list[Document]
         if self.pg_vector_store is not None:
             try:
                 candidate_docs = self.pg_vector_store.similarity_search(
-                    query, k=max(top_k * 3, top_k), filter={"market": normalized_market}
+                    query, k=max(top_k * 3, top_k), filter=scope
                 )
                 self.degraded = False
             except Exception:  # noqa: BLE001 - 向量检索失败时使用确定性 fallback。
                 self.degraded = True
                 if not self.allow_fallback:
                     raise RuntimeError("政策检索不可用，严格模式禁止降级") from None
-                candidate_docs = self._memory_search(query, normalized_market, top_k)
+                candidate_docs = self._memory_search(query, scope, top_k)
         else:
-            candidate_docs = self._memory_search(query, normalized_market, top_k)
-        candidate_docs = [doc for doc in candidate_docs if doc.metadata.get("market") == normalized_market and self._valid_document(doc)]
+            candidate_docs = self._memory_search(query, scope, top_k)
+        candidate_docs = [doc for doc in candidate_docs if all(doc.metadata.get(key) == value for key, value in scope.items()) and self._valid_document(doc)]
         backend = "pgvector" if self.pg_vector_store is not None and not self.degraded else "memory"
         return [self._to_evidence(doc, query).model_copy(update={"retrieval_backend": backend, "degraded": self.degraded}) for doc in candidate_docs[:top_k]]
 
-    def _memory_search(self, query: str, market: str, top_k: int) -> list[Document]:
+    def _memory_search(self, query: str, scope: dict[str, str], top_k: int) -> list[Document]:
         results = self.vector_store.similarity_search(query, k=max(len(self.documents), top_k * 4))
-        filtered = [doc for doc in results if str(doc.metadata.get("market", "")).upper() == market]
+        filtered = [doc for doc in results if all(doc.metadata.get(key) == value for key, value in scope.items())]
         query_lower = query.lower()
         topic_terms = [
             term.lower()
@@ -220,7 +226,7 @@ class PolicyStore:
         scored: list[tuple[int, Document]] = []
         query_tokens = set(_tokens(query))
         for document in self.documents:
-            if str(document.metadata.get("market", "")).upper() != market:
+            if not all(document.metadata.get(key) == value for key, value in scope.items()):
                 continue
             overlap = len(query_tokens.intersection(_tokens(document.page_content)))
             scored.append((overlap, document))
@@ -242,6 +248,8 @@ class PolicyStore:
             version=str(metadata.get("version", "unknown")),
             market=Market(str(metadata.get("market", "CN"))),
             language=str(metadata.get("language", Language.ZH_CN.value)),
+            goodsid=str(metadata["goodsid"]),
+            sales_channel=str(metadata["sales_channel"]),
             excerpt=excerpt,
             score=round(score, 3),
         )

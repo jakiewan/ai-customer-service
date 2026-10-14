@@ -1,13 +1,11 @@
 import asyncio
-import hashlib
 import json
 from typing import Any, Protocol
-from uuid import uuid4
 from urllib.parse import quote
 
 import httpx
 
-from .constants import CaseDraftStatus, Market, ToolName
+from .constants import Market, ToolName
 
 
 class BusinessGatewayError(RuntimeError):
@@ -28,8 +26,6 @@ class BusinessGateway(Protocol):
     async def query_device(self, serial_number: str) -> dict[str, Any]: ...
 
     async def query_repair_status(self, *, order_id: str | None, serial_number: str | None) -> dict[str, Any]: ...
-
-    async def create_case_draft(self, payload: dict[str, Any]) -> dict[str, Any]: ...
 
 
 MOCK_ORDERS: dict[str, dict[str, Any]] = {
@@ -68,27 +64,8 @@ def mask_identifier(value: str | None) -> str | None:
     return f"{value[:3]}{'*' * max(len(value) - 5, 1)}{value[-2:]}"
 
 
-def draft_fingerprint(payload: dict[str, Any]) -> str:
-    stable_fields = json.dumps([
-        str(payload.get(key, ""))
-        for key in (
-            "conversation_id",
-            "market",
-            "issue_category",
-            "issue_summary",
-            "order_id",
-            "serial_number",
-            "suggested_resolution",
-        )
-    ], ensure_ascii=False, separators=(",", ":"))
-    return hashlib.sha256(stable_fields.encode("utf-8")).hexdigest()
-
-
 class MockBusinessGateway:
-    """模拟 Java 下游；接口和幂等语义与 HTTP gateway 保持一致。"""
-
-    def __init__(self) -> None:
-        self._drafts_by_fingerprint: dict[str, dict[str, Any]] = {}
+    """Java 下游只读查询的离线适配。"""
 
     async def query_order(self, order_id: str) -> dict[str, Any]:
         await asyncio.sleep(0)
@@ -121,21 +98,6 @@ class MockBusinessGateway:
             }.get(record["repair_status"], "状态已更新"),
         }
 
-    async def create_case_draft(self, payload: dict[str, Any]) -> dict[str, Any]:
-        await asyncio.sleep(0)
-        fingerprint = payload["draft_fingerprint"]
-        existing = self._drafts_by_fingerprint.get(fingerprint)
-        if existing:
-            return {**existing, "idempotent_replay": True}
-        result = {
-            "case_draft_id": str(uuid4()),
-            "status": CaseDraftStatus.DRAFT_CREATED.value,
-            "created_at": payload.get("created_at"),
-            "idempotent_replay": False,
-            **payload,
-        }
-        self._drafts_by_fingerprint[fingerprint] = result
-        return result
 
 
 class HttpBusinessGateway:
@@ -176,8 +138,6 @@ class HttpBusinessGateway:
         params = {key: value for key, value in {"order_id": order_id, "serial_number": serial_number}.items() if value}
         return await self._request("GET", "/internal/repair-cases/status", params=params)
 
-    async def create_case_draft(self, payload: dict[str, Any]) -> dict[str, Any]:
-        return await self._request("POST", "/internal/case-drafts", json=payload)
 
 
 class McpBusinessGateway:
@@ -210,8 +170,6 @@ class McpBusinessGateway:
     async def _invoke(self, tool_name: ToolName, payload: dict[str, Any]) -> dict[str, Any]:
         if tool_name.value not in {item.value for item in ToolName}:
             raise BusinessGatewayError("工具不在权限白名单", code="TOOL_FORBIDDEN", retryable=False)
-        if tool_name.value == ToolName.CREATE_CASE_DRAFT.value:
-            raise BusinessGatewayError("模型不可调用写入工具", code="TOOL_FORBIDDEN", retryable=False)
         try:
             async with asyncio.timeout(self.timeout_seconds):
                 await self._load_tools()
@@ -272,8 +230,6 @@ class McpBusinessGateway:
             {"order_id": order_id, "serial_number": serial_number},
         )
 
-    async def create_case_draft(self, payload: dict[str, Any]) -> dict[str, Any]:
-        raise BusinessGatewayError("Case Draft 写入必须由应用节点调用", code="TOOL_FORBIDDEN", retryable=False)
 
 
 def build_business_gateway(mode: str, *, base_url: str, timeout_seconds: float, mcp_url: str, mcp_token: str = "", business_token: str = "") -> BusinessGateway:

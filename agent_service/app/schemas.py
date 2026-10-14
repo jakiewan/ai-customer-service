@@ -5,12 +5,12 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from .constants import (
-    CaseDraftStatus,
     Channel,
     ConversationStatus,
     ErrorCode,
     Language,
     Market,
+    SalesChannel,
     MessageRole,
 )
 
@@ -23,6 +23,8 @@ class CreateConversationRequest(BaseModel):
     channel: Literal[Channel.WEB_CHAT.value] = Channel.WEB_CHAT.value
     market: Market | None = None
     language: Language | None = None
+    goodsid: str | None = Field(default=None, pattern=r"^[0-9]{5}$")
+    sales_channel: SalesChannel | None = None
     client_session_id: str | None = Field(default=None, max_length=64)
 
 
@@ -40,6 +42,8 @@ class MessageRequest(BaseModel):
     message: str = Field(min_length=1, max_length=2000)
     market: Market | None = None
     language: Language | None = None
+    goodsid: str | None = Field(default=None, pattern=r"^[0-9]{5}$")
+    sales_channel: SalesChannel | None = None
 
     @field_validator("message")
     @classmethod
@@ -56,6 +60,8 @@ class PolicyEvidence(BaseModel):
     version: str
     market: Market
     language: str
+    goodsid: str = ""
+    sales_channel: str = ""
     excerpt: str
     score: float = Field(ge=0, le=1)
     score_kind: Literal["token_overlap_heuristic"] = "token_overlap_heuristic"
@@ -75,31 +81,10 @@ class BusinessFact(BaseModel):
     status_label: str | None = Field(default=None, max_length=256, strict=True)
 
 
-class DraftWriteResult(BaseModel):
-    case_draft_id: UUID
-    created_at: datetime | None = None
-    status: Literal["DRAFT_CREATED", "CASE_DRAFT_CREATED"] | None = None
-    idempotent_replay: bool = Field(default=False, strict=True)
-    draft_fingerprint: str | None = None
-    market: Market | None = None
-    conversation_id: UUID | None = None
-
-
-class CaseDraftView(BaseModel):
-    case_draft_id: UUID
-    status: CaseDraftStatus
-    conversation_id: UUID
-    issue_category: str
-    issue_summary: str
-    suggested_resolution: str
-    market: Market
-    product_model: str | None = None
-    order_id_masked: str | None = None
-    serial_number_masked: str | None = None
-    missing_fields: list[str] = Field(default_factory=list)
-    policy_evidence: list[PolicyEvidence] = Field(default_factory=list)
-    review_required: bool = True
-    created_at: datetime
+class ActionLink(BaseModel):
+    service_type: Literal["purchase", "aftersales"]
+    label: str
+    url: str
 
 
 class MessageView(BaseModel):
@@ -108,6 +93,7 @@ class MessageView(BaseModel):
     content: str
     created_at: datetime
     citations: list[PolicyEvidence] = Field(default_factory=list)
+    action_links: list[ActionLink] = Field(default_factory=list)
 
 
 class ConversationView(BaseModel):
@@ -116,7 +102,8 @@ class ConversationView(BaseModel):
     market: Market | None = None
     language: Language | None = None
     messages: list[MessageView] = Field(default_factory=list)
-    case_draft_id: UUID | None = None
+    goodsid: str | None = None
+    sales_channel: str | None = None
     updated_at: datetime
 
 

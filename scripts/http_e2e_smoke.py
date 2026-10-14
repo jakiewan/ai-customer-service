@@ -1,10 +1,11 @@
-"""验证 FastAPI → LangGraph → MCP → Spring Boot Case Draft 的本地链路。"""
+"""验证运行中的 FastAPI、政策适用性、官方入口和 SSE 结果。"""
 
 import json
+import os
 
 import httpx
 
-BASE_URL = "http://127.0.0.1:8000"
+BASE_URL = os.getenv("GLOBALCARE_BASE_URL", "http://127.0.0.1:8000")
 HEADERS = {"X-Demo-Token": "globalcare-demo-token", "X-Request-Id": "http-e2e-smoke"}
 
 
@@ -22,67 +23,33 @@ def parse_sse(payload: str) -> list[tuple[str, dict]]:
 
 def run() -> None:
     with httpx.Client(timeout=20) as client:
-        response = client.get(f"{BASE_URL}/healthz")
-        response.raise_for_status()
-        assert response.json()["data"]["status"] == "ok"
-
-        created = client.post(
-            f"{BASE_URL}/api/v1/conversations",
-            headers=HEADERS,
-            json={"channel": "WEB_CHAT", "market": "MY", "language": "zh-CN"},
-        )
+        client.get(f"{BASE_URL}/healthz").raise_for_status()
+        created = client.post(f"{BASE_URL}/api/v1/conversations", headers=HEADERS,
+                              json={"market": "MY", "goodsid": "65539", "sales_channel": "MALL", "language": "zh-CN"})
         created.raise_for_status()
-        conversation_id = created.json()["data"]["conversation_id"]
-
-        repair_request = client.post(
-            f"{BASE_URL}/api/v1/conversations/{conversation_id}/messages/stream",
-            headers=HEADERS,
-            json={
-                "client_message_id": "e2e-message-001",
-                "message": "我要申请售后维修，订单号 ORD-MY-2001，手机无法开机",
-            },
-        )
-        repair_request.raise_for_status()
-        repair_events = parse_sse(repair_request.text)
-        names = [name for name, _ in repair_events]
-        assert "policy_evidence" in names
-        assert "tool_call" in names
-        created_events = [data for name, data in repair_events if name == "case_draft_created"]
-        assert len(created_events) == 1
-        draft_id = created_events[0]["case_draft_id"]
-        assert created_events[0]["market"] == "MY"
-
-        draft = client.get(f"{BASE_URL}/api/v1/case-drafts/{draft_id}", headers=HEADERS)
-        draft.raise_for_status()
-        assert draft.json()["data"]["status"] == "DRAFT_CREATED"
-
-        progress = client.post(
-            f"{BASE_URL}/api/v1/conversations/{conversation_id}/messages/stream",
-            headers=HEADERS,
-            json={"client_message_id": "e2e-message-002", "message": "查询维修进度"},
-        )
-        progress.raise_for_status()
-        progress_events = parse_sse(progress.text)
-        progress_text = "".join(data.get("delta", "") for name, data in progress_events if name == "token")
-        assert "维修处理中" in progress_text
-        assert not [data for name, data in progress_events if name == "case_draft_created"]
-
-        unsupported = client.post(
-            f"{BASE_URL}/api/v1/conversations/{conversation_id}/messages/stream",
-            headers=HEADERS,
-            json={"client_message_id": "e2e-message-003", "message": "退款要怎么处理"},
-        )
-        unsupported.raise_for_status()
-        unsupported_events = parse_sse(unsupported.text)
-        assert any(name == "human_required" for name, _ in unsupported_events)
-        assert not [data for name, data in unsupported_events if name == "policy_evidence"]
-
-        audit = client.get(f"{BASE_URL}/api/v1/conversations/{conversation_id}/audit", headers=HEADERS)
+        cid = created.json()["data"]["conversation_id"]
+        uri = f"{BASE_URL}/api/v1/conversations/{cid}"
+        def ask(message, message_id):
+            response = client.post(uri + "/messages/stream", headers=HEADERS,
+                                   json={"client_message_id": message_id, "message": message})
+            response.raise_for_status()
+            events = parse_sse(response.text)
+            assert events[-1][0] == "done" and not any(name == "error" for name, _ in events)
+            assert not any(name == "tool_call" for name, _ in events)
+            return events
+        policy = ask("手机保修多久", "policy")
+        evidence = next(data for name, data in policy if name == "policy_evidence")
+        assert (evidence["market"], evidence["goodsid"], evidence["sales_channel"]) == ("MY", "65539", "MALL")
+        assert policy[-1][1]["action_links"] == []
+        entry = ask("我要申请维修", "entry")
+        expected = os.getenv("GLOBALCARE_AFTERSALES_URL", "")
+        assert entry[-1][1]["action_links"] == ([{"service_type": "aftersales", "label": "售后申请入口", "url": expected}] if expected else [])
+        replay = ask("我要申请维修", "entry")
+        assert entry[-1][1]["action_links"] == replay[-1][1]["action_links"]
+        assert len(client.get(uri, headers=HEADERS).json()["data"]["messages"]) == 4
+        audit = client.get(uri + "/audit", headers=HEADERS)
         audit.raise_for_status()
-        audit_types = [item["event_type"] for item in audit.json()["data"]]
-        assert "TOOL_CALL" in audit_types
-        assert "CASE_DRAFT_CREATED" in audit_types
-
+        assert sum(item["event_type"] == "AGENT_RUN_COMPLETED" for item in audit.json()["data"]) == 2
     print("HTTP_E2E_OK")
 
 

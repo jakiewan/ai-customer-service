@@ -14,7 +14,7 @@ from psycopg_pool import AsyncConnectionPool
 from .checkpointer import to_psycopg_dsn
 from .constants import Channel, ConversationStatus, MessageRole
 from .store import (
-    AuditEventRecord, CaseDraftNotFoundError, ConversationNotFoundError,
+    AuditEventRecord, ConversationNotFoundError,
     ConversationRecord, StoredMessage, StoreRequestError,
 )
 
@@ -36,9 +36,8 @@ class PostgresStore:
     async def open(self) -> None:
         await self.pool.open(wait=True, timeout=5)
         async with self.pool.connection() as connection:
-            await connection.execute("SELECT state, case_draft_id FROM conversations LIMIT 0")
+            await connection.execute("SELECT state FROM conversations LIMIT 0")
             await connection.execute("SELECT request_fingerprint, result FROM agent_message_requests LIMIT 0")
-            await connection.execute("SELECT result FROM agent_draft_writes LIMIT 0")
 
     async def close(self) -> None:
         await self.pool.close()
@@ -48,8 +47,7 @@ class PostgresStore:
             async with asyncio.timeout(3), self.pool.connection() as connection:
                 await connection.execute("SELECT state FROM conversations LIMIT 0")
                 await connection.execute("SELECT result FROM agent_message_requests LIMIT 0")
-                await connection.execute("SELECT result FROM agent_draft_writes LIMIT 0")
-            return True
+                return True
         except Exception:
             return False
 
@@ -92,10 +90,10 @@ class PostgresStore:
                     self._bound_connection.reset(bound)
 
     async def create_conversation(self, *, token: str, channel: Channel, market: str | None,
-                                  language: str | None, actor_context: dict[str, str] | None = None):
+                                  language: str | None, actor_context: dict[str, str] | None = None, goodsid: str | None = None, sales_channel: str | None = None):
         conversation_id = uuid4()
         state = {"conversation_id": str(conversation_id), "messages": [], "market": market,
-                 "language": language, "status": "AI_ACTIVE", **(actor_context or {})}
+                 "language": language, "goodsid": goodsid, "sales_channel": sales_channel, "status": "AI_ACTIVE", **(actor_context or {})}
         async with self._connection() as connection:
             await connection.execute(
                 "INSERT INTO conversations (conversation_id,demo_subject_hash,channel,market,language,status,state) "
@@ -119,11 +117,11 @@ class PostgresStore:
             )).fetchall()
         return ConversationRecord(
             conversation_id=conversation_id, token=token or "", channel=Channel(row["channel"]),
-            market=row["market"], language=row["language"], status=ConversationStatus(row["status"]),
-            state=row["state"], case_draft_id=row["case_draft_id"],
+            market=row["market"], language=row["language"], status=ConversationStatus(row["status"]) if row["status"] in set(ConversationStatus) else ConversationStatus.COMPLETED,
+            state=row["state"],
             created_at=row["created_at"], updated_at=row["updated_at"],
             messages=[StoredMessage(item["message_id"], MessageRole(item["role"]), item["content"],
-                                    item["created_at"], item["citations"]) for item in messages],
+                                    item["created_at"], item["citations"], item["action_links"]) for item in messages],
         )
 
     async def append_user_message(self, conversation_id: UUID, token: str, client_message_id: str,
@@ -156,25 +154,15 @@ class PostgresStore:
         await self.get_conversation(conversation_id, token)
         async with self._connection() as connection, connection.transaction():
             await connection.execute(
-                "UPDATE conversations SET state=%s,status=%s,market=%s,language=%s,case_draft_id=%s,updated_at=now() "
+                "UPDATE conversations SET state=%s,status=%s,market=%s,language=%s,updated_at=now() "
                 "WHERE conversation_id=%s",
                 (Jsonb(state), state.get("conversation_status", "AI_ACTIVE"), state.get("market"),
-                 state.get("language"), state.get("case_draft_id"), conversation_id),
+                 state.get("language"), conversation_id),
             )
             await connection.execute(
-                "INSERT INTO conversation_messages (message_id,conversation_id,role,content,citations) VALUES (%s,%s,%s,%s,%s)",
-                (uuid4(), conversation_id, "assistant", reply, Jsonb(citations)),
+                "INSERT INTO conversation_messages (message_id,conversation_id,role,content,citations,action_links) VALUES (%s,%s,%s,%s,%s,%s)",
+                (uuid4(), conversation_id, "assistant", reply, Jsonb(citations), Jsonb(result.get("action_links", []))),
             )
-            draft = state.get("case_draft")
-            if draft and state.get("case_draft_id"):
-                saved = await connection.execute(
-                    "INSERT INTO case_drafts (case_draft_id,conversation_id,draft_fingerprint,status,payload) "
-                    "VALUES (%s,%s,%s,%s,%s) ON CONFLICT (case_draft_id) DO UPDATE SET payload=EXCLUDED.payload "
-                    "WHERE case_drafts.conversation_id=EXCLUDED.conversation_id AND case_drafts.draft_fingerprint=EXCLUDED.draft_fingerprint",
-                    (state["case_draft_id"], conversation_id, draft["draft_fingerprint"], "DRAFT_CREATED", Jsonb(draft)),
-                )
-                if saved.rowcount != 1:
-                    raise StoreRequestError("草稿 ID 与现有归属冲突，需要核对下游", code="DRAFT_CONFLICT")
             await connection.execute(
                 "UPDATE agent_message_requests SET result=%s,updated_at=now() WHERE conversation_id=%s AND client_message_id=%s",
                 (Jsonb(result), conversation_id, client_message_id),
@@ -186,33 +174,6 @@ class PostgresStore:
                  Jsonb({"status": result["status"], "human_required": bool(result.get("human_required")),
                         "error_code": (result.get("error") or {}).get("code")})),
             )
-
-    async def get_draft(self, draft_id: UUID):
-        async with self._connection() as connection:
-            row = await (await connection.execute("SELECT payload FROM case_drafts WHERE case_draft_id=%s", (draft_id,))).fetchone()
-        if row is None:
-            raise CaseDraftNotFoundError(str(draft_id))
-        return row["payload"]
-
-    async def reserve_draft_write(self, payload: dict[str, Any]):
-        async with self._connection() as connection:
-            reserved = await (await connection.execute(
-                "INSERT INTO agent_draft_writes (draft_fingerprint,conversation_id,payload) VALUES (%s,%s,%s) "
-                "ON CONFLICT DO NOTHING RETURNING draft_fingerprint",
-                (payload["draft_fingerprint"], payload["conversation_id"], Jsonb(payload)),
-            )).fetchone()
-            if reserved:
-                return None
-            row = await (await connection.execute("SELECT result FROM agent_draft_writes WHERE draft_fingerprint=%s",
-                                                   (payload["draft_fingerprint"],))).fetchone()
-            if not row or row["result"] is None:
-                raise StoreRequestError("上次草稿写入结果未确定，需要核对下游", code="DRAFT_WRITE_INDETERMINATE")
-            return {**row["result"], "idempotent_replay": True}
-
-    async def confirm_draft_write(self, fingerprint: str, result: dict[str, Any]):
-        async with self._connection() as connection:
-            await connection.execute("UPDATE agent_draft_writes SET result=%s,updated_at=now() WHERE draft_fingerprint=%s",
-                                     (Jsonb(result), fingerprint))
 
     async def record_audit(self, conversation_id: UUID, token: str, *, trace_id: str,
                            event_type: str, event_payload: dict[str, Any]):

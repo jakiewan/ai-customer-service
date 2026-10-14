@@ -1,7 +1,7 @@
 import re
 from dataclasses import dataclass
 
-from .constants import Intent, Language, Market
+from .constants import CATEGORY_NAMES, SALES_CHANNEL_NAMES, Intent, Language, Market
 
 STATUS_TERMS = (
     "维修进度",
@@ -15,13 +15,13 @@ STATUS_TERMS = (
     "service status",
     "where is my repair",
 )
-CASE_TERMS = (
+AFTERSALES_TERMS = (
     "申请维修",
     "售后维修",
     "报修",
     "送修",
-    "创建案例",
     "申请售后",
+    "售后申请",
     "我要维修",
     "repair request",
     "send it for repair",
@@ -76,8 +76,10 @@ FAQ_TERMS = (
     "policy",
     "coverage",
     "eligible",
+    "免费",
+    "材料",
 )
-CASE_CANCEL_TERMS = ("不要申请", "不想维修", "取消维修", "取消申请", "不申请", "do not want", "don't want", "cancel my repair")
+LINK_CANCEL_TERMS = ("不要申请", "不想维修", "取消维修", "取消申请", "不申请", "do not want", "don't want", "cancel my repair")
 
 
 @dataclass(frozen=True)
@@ -88,6 +90,8 @@ class ExtractedContext:
     market: Market | None = None
     language: Language | None = None
     issue_category: str = "general_issue"
+    goodsid: str | None = None
+    sales_channel: str | None = None
 
 
 def _contains(text: str, terms: tuple[str, ...]) -> bool:
@@ -96,30 +100,34 @@ def _contains(text: str, terms: tuple[str, ...]) -> bool:
 
 
 def classify_intent(text: str) -> Intent:
-    """离线确定性路由是安全底座，LLM 只作为可选增强，不决定写操作。"""
+    """确定性区分知识咨询和入口诉求，保留否定语义。"""
 
-    if case_cancelled(text):
+    if link_cancelled(text):
+        if _contains(text, FAQ_TERMS):
+            return Intent.FAQ
+        if _contains(text, TROUBLESHOOTING_TERMS):
+            return Intent.TROUBLESHOOTING
         return Intent.GENERAL
-    # 高风险请求进入政策证据门禁，不能落入普通排查或 Case Draft 路径。
     if _contains(text, HIGH_RISK_TERMS):
         return Intent.FAQ
     if _contains(text, STATUS_TERMS):
         return Intent.REPAIR_STATUS
-    if (_contains(text, CASE_TERMS) and _contains(text, ("需要什么", "哪些材料", "如何", "怎么申请", "怎么弄", "怎么操作", "how", "what")) and
-        not _contains(text, ("帮我", "我要", "我想", "请帮", "i need", "i want", "please"))):
-        return Intent.FAQ
-    if _contains(text, CASE_TERMS):
-        return Intent.CASE_REQUEST
-    if _contains(text, TROUBLESHOOTING_TERMS):
-        return Intent.TROUBLESHOOTING
+    if _contains(text, ("我要买", "我想买", "在哪买", "哪里买", "购买链接", "商城", "官网商城", "where to buy", "purchase link", "buy now")):
+        return Intent.PURCHASE_LINK
+    if _contains(text, AFTERSALES_TERMS):
+        if _contains(text, ("需要什么", "哪些材料", "材料", "条件", "多久", "免费", "what documents", "requirements")) and not _contains(text, ("入口", "链接", "url", "link")):
+            return Intent.FAQ
+        return Intent.AFTERSALES_LINK
     if _contains(text, FAQ_TERMS):
         return Intent.FAQ
+    if _contains(text, TROUBLESHOOTING_TERMS):
+        return Intent.TROUBLESHOOTING
     return Intent.GENERAL
 
 
-def case_cancelled(text: str) -> bool:
+def link_cancelled(text: str) -> bool:
     # 否定与申请动作之间允许短修饰语，但不跨句匹配，避免误伤后续明确申请。
-    return _contains(text, CASE_CANCEL_TERMS) or bool(re.search(
+    return _contains(text, LINK_CANCEL_TERMS) or bool(re.search(
         r"(?:不要|不想|不打算|不需要|不愿|暂不|先别|别)[^，。！？,.;!?]{0,8}"
         r"(?:申请(?:售后)?维修|申请售后|报修|送修)", text
     )) or bool(re.search(
@@ -172,6 +180,12 @@ def extract_context(text: str) -> ExtractedContext:
     language_text = re.sub(r"\b(?:ord|sn)-[a-z0-9-]+\b", "", lowered)
     language = Language.EN_MY if re.search(r"\b(the|what|how|my|repair)\b", language_text) else Language.ZH_CN
     issue_category = "cannot_power_on" if _contains(text, POWER_TROUBLESHOOTING_TERMS) else "general_issue"
+    goodsid = _first_match((r"(?:goodsid|三级品类|品类)\s*[:：=]?\s*(\d{5})\b",), text)
+    if text.strip() in CATEGORY_NAMES:
+        goodsid = text.strip()
+    if goodsid is None:
+        goodsid = next((key for key, name in CATEGORY_NAMES.items() if name in text), None)
+    sales_channel = next((key for key, name in SALES_CHANNEL_NAMES.items() if name in text or key in text.upper().split()), None)
     return ExtractedContext(
         order_id=order_id,
         serial_number=serial_number,
@@ -179,6 +193,8 @@ def extract_context(text: str) -> ExtractedContext:
         market=market,
         language=language,
         issue_category=issue_category,
+        goodsid=goodsid,
+        sales_channel=sales_channel,
     )
 
 

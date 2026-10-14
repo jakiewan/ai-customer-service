@@ -1,145 +1,63 @@
-# GlobalCare Web 售后 Case 智能受理 Agent MVP
+# GlobalCare 商品与售后咨询 Agent
 
-一个面向消费电子售后网页聊天的 Agent 项目。它把“故障咨询、维修进度、申请售后”拆成不同的受理路径：Agent 可以给出带政策依据的回答、查询业务事实、创建或复用结构化 `Case Draft`，但不能创建正式 Case 或 Work Order。
+基于 FastAPI、LangGraph 和 LangChain 的网页客服。政策按国家、三级品类 goodsid 和销售渠道唯一匹配；购买、申请售后或寻找办理入口时返回已配置的固定 URL。用户在官方页面自行办理。
 
-这是求职作品级、可本地联调的 MVP：业务数据、政策与 Spring Boot 下游均为脱敏模拟实现；Agent 状态机、MCP 工具边界、pgvector 政策检索、SSE、草稿幂等和测试是真实代码。
+## 当前能力
 
-## 已落地能力
+- 政策 Document 加载、元数据校验、向量检索与三字段适用性复核。
+- 五节点图：意图识别、必要信息追问、政策检索、入口选择、回复。
+- 固定官方入口与消息级引用、action_links、SSE 输出。
+- JWT、会话归属、消息幂等、同会话锁、内存/PostgreSQL 会话存储和审计。
+- 原个人业务查询模块和 MCP 服务保留为独立只读服务，当前客服不依赖或调用它们。
 
-- LangGraph：显式状态图、条件路由、单轮步骤预算、内存/ PostgreSQL Checkpointer。
-- LangChain：MiniMax-M3 可选结构化意图模型、Prompt、`Document`、Embedding 和 pgvector Retriever。
-- MCP：FastMCP 仅暴露 `query_order`、`query_device`、`query_repair_status` 三个只读工具；写入草稿不暴露给模型。
-- FastAPI：会话、SSE、草稿查询、健康检查、CORS 和 OpenAPI。
-- 审计：会话内的 Agent 节点、工具、政策证据、草稿事件可通过 Audit API 查询。
-- Spring Boot：模拟订单、设备、维修状态和 Case Draft 幂等接口。
-- Vue 3：真实调用 FastAPI SSE，不再只用固定话术演示。
-- PostgreSQL + pgvector：独立 Docker 容器、政策向量集合和 LangGraph checkpoint 表。
+本轮不新增 PostgreSQL 知识表。知识发布、Milvus 混合检索、独立重排及父块回查是后续方案，完成状态以源码及验证为准。当前政策是回归样例，尚无正式业务资料与官方 URL。
 
-## 项目资料
+## 政策匹配
 
-- [需求文档](需求文档.md)
-- [技术方案](技术方案.md)
-- [需求分析报告](需求分析报告.md)
-- [开发执行状态](开发执行状态.md)
-- [测试说明与报告](测试说明与报告.md)
-- [测试用例清单](测试用例清单.md)
-- [面试话术](面试话术.md)
-- [开工思维导图](diagram/globalcare-project-mindmap.svg)
-- [后端架构图](diagram/globalcare-backend-architecture.svg)
-- [Case Draft 时序图](diagram/globalcare-case-draft-sequence.svg)
+唯一键为 `market + goodsid + sales_channel`，不使用型号、SKU、地区或日期过滤政策。
 
-## 代码结构
+| goodsid | 三级品类 |
+| --- | --- |
+| 65539 | 手机 |
+| 65540 | 电脑 |
+| 65541 | 空调 |
+| 65542 | 冰箱 |
+| 65543 | 洗衣机 |
 
-```text
-ai-customer-service/
-├── frontend/                 # Vue 3 CDN 单页，真实 SSE 联调
-├── agent_service/
-│   ├── app/                  # FastAPI、LangGraph、LangChain、MCP adapter
-│   ├── data/policies/        # CN/MY 脱敏模拟政策
-│   ├── migrations/           # PostgreSQL + pgvector DDL
-│   └── mcp_server.py         # FastMCP 只读工具服务
-├── domain_service/           # Spring Boot 模拟业务服务
-├── scripts/                  # pgvector 初始化、种子与 HTTP E2E smoke
-├── docker-compose.yml        # 独立 pgvector 容器（55432）
-└── 技术方案.md
-```
+渠道：`MALL` 商城、`DIRECT` 自营店、`AUTHORIZED` 授权店。当前仅有手机的 CN/MY 六组样例；其他品类资料缺失时明确返回无依据。
 
-## 本地运行
+SKU 表示具体商品规格，不与三级品类 goodsid 混用。保修起算日期仍可出现在政策正文里，但不参与本轮政策版本筛选。
 
-默认 Python 环境为本机 `ai-base`：`/opt/anaconda3/envs/ai-base/bin/python`。
-
-### 1. 安装 Python 依赖
+## 启动
 
 ```bash
-/opt/anaconda3/envs/ai-base/bin/python -m pip install -r requirements.txt
+PYTHONPATH=. /opt/anaconda3/envs/ai-base/bin/python -m uvicorn agent_service.app.main:app --host 127.0.0.1 --port 8000
+(cd frontend && python3 -m http.server 4173 --bind 127.0.0.1)
 ```
 
-### 2. 启动独立 pgvector
+从 `.env.example` 配置 `GLOBALCARE_PURCHASE_URL`、`GLOBALCARE_AFTERSALES_URL`，填业务确认的 HTTPS 地址；未配置则说明入口不可用。
+
+使用既有 PostgreSQL 会话存储时先执行迁移：
 
 ```bash
-docker compose up -d
-export GLOBALCARE_DATABASE_URL='postgresql+psycopg://postgres:postgres@127.0.0.1:55432/globalcare_agent'
 PYTHONPATH=. /opt/anaconda3/envs/ai-base/bin/python scripts/init_postgres.py
 PYTHONPATH=. /opt/anaconda3/envs/ai-base/bin/python scripts/seed_policy_pgvector.py
 ```
 
-该容器仅使用端口 `55432` 和项目命名卷 `globalcare_pgdata`，不会触碰本机已有的 `5432` PostgreSQL。
-
-### 3. 启动 Spring Boot 模拟业务服务
-
-```bash
-cd domain_service
-mvn -Dmaven.repo.local=.mvn/repository spring-boot:run
-```
-
-### 4. 启动 FastMCP 工具服务
-
-```bash
-PYTHONPATH=. /opt/anaconda3/envs/ai-base/bin/python -m agent_service.mcp_server
-```
-
-### 5. 启动 FastAPI Agent
-
-```bash
-export GLOBALCARE_LLM_MODE=mock
-export GLOBALCARE_BUSINESS_MODE=http
-export GLOBALCARE_MCP_MODE=http
-export GLOBALCARE_POLICY_BACKEND=pgvector
-export GLOBALCARE_CHECKPOINTER_MODE=postgres
-export GLOBALCARE_DATABASE_URL='postgresql+psycopg://postgres:postgres@127.0.0.1:55432/globalcare_agent'
-export GLOBALCARE_BUSINESS_BASE_URL='http://127.0.0.1:8081'
-export GLOBALCARE_MCP_URL='http://127.0.0.1:8001/mcp'
-export GLOBALCARE_DEMO_TOKEN='globalcare-demo-token'
-PYTHONPATH=. /opt/anaconda3/envs/ai-base/bin/python -m uvicorn agent_service.app.main:app --host 127.0.0.1 --port 8000
-```
-
-访问 `http://127.0.0.1:8000/docs` 查看运行时 OpenAPI 文档。
-
-### 6. 启动 Vue 页面
-
-```bash
-cd frontend
-python3 -m http.server 4173 --bind 127.0.0.1
-```
-
-浏览器打开 `http://127.0.0.1:4173/index.html`。
+本轮只增加消息表的 `action_links` 字段，不增加知识表，不对历史数据执行 DROP。重新入库使现有检索后端具有 goodsid、sales_channel 元数据。
 
 ## 验证
 
 ```bash
-# 离线单元与 API 契约测试
 PYTHONPATH=. /opt/anaconda3/envs/ai-base/bin/python -m pytest -q agent_service/tests
-
-# Spring Boot 单元测试
-cd domain_service && mvn -Dmaven.repo.local=.mvn/repository clean test
-
-# 三个服务启动后，验证 FastAPI → LangGraph → MCP → Spring Boot
+(cd domain_service && mvn -Dmaven.repo.local=.mvn/repository clean test)
 PYTHONPATH=. /opt/anaconda3/envs/ai-base/bin/python scripts/http_e2e_smoke.py
-
-# 对真实运行服务执行 27 个边界用例并循环 3 轮
-PYTHONPATH=. /opt/anaconda3/envs/ai-base/bin/python scripts/run_boundary_loop.py
 ```
 
-当前阶段六结果：162 条自动化用例 3 轮共 486 次全部通过；27 条真实服务边界用例 3 轮共 81 次全部通过。Computer Use 已实际操作 Vue 页面验证故障排查、市场切换、Case Draft、维修进度和高风险拒答。
+HTTP 脚本默认访问 8000，可用 `GLOBALCARE_BASE_URL` 指向其他本地验收实例。真实模型、正式政策与上线收益需要另行验证。
 
-当前 Golden Conversation 至少覆盖：
+## 文档
 
-1. “手机无法开机怎么办” → 排查步骤 + 政策引用，**不创建草稿**。
-2. “我要申请售后维修” → 请求订单号/SN；下一轮补 `ORD-MY-2001` 后创建草稿。
-3. “查询维修进度” → 调 MCP 返回 `维修处理中`，**不创建第二份草稿**。
-4. 重复提交相同 `client_message_id` → SSE 幂等重放。
-5. `GET /api/v1/conversations/{id}/audit` → 查询受控的节点、工具、政策与草稿轨迹。
-
-## 模型与 Embedding 模式
-
-- `GLOBALCARE_LLM_MODE=mock`：离线可测试的结构化路由；默认模式。
-- `GLOBALCARE_LLM_MODE=minimax`：使用 `MINIMAX_API_KEY`、`MINIMAX_BASE_URL`、`MINIMAX_MODEL=MiniMax-M3`；真实调用会消耗配额。
-- `GLOBALCARE_EMBEDDING_MODE=hash`：默认，确定性离线 embedding，便于 CI 与快速 MVP。
-- `GLOBALCARE_EMBEDDING_MODE=huggingface`：本地多语言 embedding。若使用 `paraphrase-multilingual-MiniLM-L12-v2`，设置 `GLOBALCARE_EMBEDDING_DIMENSIONS=384`，并重新创建独立的 pgvector collection；首次会下载模型权重。
-
-## 明确边界
-
-- 没有真实登录、真实客户数据、真实订单、正式 Case、Work Order、人工坐席或通知自动化。
-- Case Draft 是 Agent 唯一可触发的受控业务写入，且由应用节点调用 Spring Boot 接口；模型没有写工具权限。
-- 当前 API 会话对象和 Audit API 仍采用内存仓储；政策向量和 LangGraph Checkpoint 可以落 PostgreSQL。将会话、审计和真实鉴权全面持久化是下一阶段工作，不应声称已经生产上线。
-- Dify FAQ 基线是已规划的第二阶段，用同一份政策 Markdown 做对照；本 MVP 不并行维护第二个客服运行时。
+- [当前技术方案](技术方案.md)
+- [本轮实施范围](docs/design/ecommerce-rag-20261013/实施范围-20261014.md)
+- [后续完整 RAG 设计](docs/design/ecommerce-rag-20261013/技术方案-详细实现版.md)
