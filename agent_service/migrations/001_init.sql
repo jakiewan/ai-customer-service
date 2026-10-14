@@ -33,15 +33,6 @@ CREATE TABLE IF NOT EXISTS policy_documents (
 
 CREATE INDEX IF NOT EXISTS policy_documents_market_idx ON policy_documents(market);
 
-CREATE TABLE IF NOT EXISTS case_drafts (
-    case_draft_id UUID PRIMARY KEY,
-    conversation_id UUID NOT NULL REFERENCES conversations(conversation_id),
-    draft_fingerprint VARCHAR(128) NOT NULL UNIQUE,
-    status VARCHAR(32) NOT NULL,
-    payload JSONB NOT NULL,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-
 CREATE TABLE IF NOT EXISTS agent_audit_events (
     audit_id UUID PRIMARY KEY,
     conversation_id UUID,

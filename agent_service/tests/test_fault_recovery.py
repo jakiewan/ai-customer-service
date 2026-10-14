@@ -14,7 +14,6 @@ from agent_service.app.config import Settings
 from agent_service.app.main import create_app
 from agent_service.app.schemas import CreateConversationRequest, MessageRequest
 from agent_service.tests.test_postgres_conversations import database_url
-from agent_service.tests.test_mcp_protocol import server, free_port
 
 
 @pytest.mark.asyncio
@@ -68,19 +67,25 @@ async def test_capacity_rejection_does_not_claim_request_and_disconnect_releases
 @pytest.mark.asyncio
 @pytest.mark.parametrize("backend", ["memory", "postgres"])
 async def test_total_timeout_is_audited_and_uncertain_request_is_not_reexecuted(database_url, backend):
-    with server(free_port()) as url:
-        app = create_app(Settings(_env_file=None, persistence_mode=backend, database_url=database_url,
-                                  mcp_mode="http", mcp_url=url, agent_run_timeout_seconds=0.1))
-        async with app.router.lifespan_context(app):
-            service = app.state.conversation_service
-            conversation = await service.create_conversation("owner", CreateConversationRequest(market="MY"))
-            request = MessageRequest(client_message_id="timed-out", message="申请维修，订单 ORD-MY-SLOW，手机无法开机")
-            events = [event async for event in service.stream_message(conversation.conversation_id, "owner", request, "timeout")]
-            assert any(event["event"] == "error" and event["data"]["code"] == "AGENT_RUN_TIMEOUT" for event in events)
-            assert (await service.conversation_view(conversation.conversation_id, "owner")).status == "FAILED"
-            repeated = [event async for event in service.stream_message(conversation.conversation_id, "owner", request, "repeat")]
-            assert repeated[0]["data"]["code"] == "REQUEST_INDETERMINATE"
-            assert any(event.event_type == "AGENT_RUN_INDETERMINATE" for event in await service.audit_views(conversation.conversation_id, "owner"))
+    app = create_app(Settings(_env_file=None, persistence_mode=backend, database_url=database_url, agent_run_timeout_seconds=0.1))
+    async with app.router.lifespan_context(app):
+        service = app.state.conversation_service
+        graph = service.graph_service.graph
+        original = graph.astream
+        async def slow(*args, **kwargs):
+            await asyncio.sleep(1)
+            async for event in original(*args, **kwargs):
+                yield event
+        graph.astream = slow
+        conv = await service.create_conversation("owner", CreateConversationRequest(market="MY"))
+        request = MessageRequest(client_message_id="timed-out", message="你好")
+        events = [event async for event in service.stream_message(conv.conversation_id, "owner", request, "timeout")]
+        assert any(event["event"] == "error" and event["data"]["code"] == "AGENT_RUN_TIMEOUT" for event in events)
+        assert (await service.conversation_view(conv.conversation_id, "owner")).status == "FAILED"
+        repeated = [event async for event in service.stream_message(conv.conversation_id, "owner", request, "repeat")]
+        assert repeated[0]["data"]["code"] == "REQUEST_INDETERMINATE"
+        assert any(event.event_type == "AGENT_RUN_INDETERMINATE" for event in await service.audit_views(conv.conversation_id, "owner"))
+
 
 
 def test_process_death_releases_database_lock_but_does_not_reexecute_orphan(database_url):

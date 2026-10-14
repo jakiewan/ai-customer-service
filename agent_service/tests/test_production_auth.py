@@ -57,20 +57,3 @@ def test_invalid_jwt_claims_are_rejected(keys, patch):
     with TestClient(create_app(Settings(auth_mode="jwt", jwt_public_key=public_key,
                                        jwt_issuer="https://login.example.test", jwt_audience="globalcare-agent"))) as client:
         assert client.post("/api/v1/conversations", headers=bearer(key, **patch), json={}).status_code == 401
-
-
-@pytest.mark.parametrize("customer,tenant", [("other-customer", "tenant-one"), ("CUS-MY-001", "other-tenant")])
-def test_valid_login_does_not_authorize_someone_elses_business_data(keys, customer, tenant):
-    key, public_key = keys
-    with TestClient(create_app(Settings(auth_mode="jwt", jwt_public_key=public_key,
-                                       jwt_issuer="https://login.example.test", jwt_audience="globalcare-agent"))) as client:
-        headers = bearer(key, customer_id=customer, tenant_id=tenant)
-        created = client.post("/api/v1/conversations", headers=headers, json={"market": "MY"})
-        uri = "/api/v1/conversations/" + created.json()["data"]["conversation_id"]
-        response = client.post(uri + "/messages/stream", headers=headers,
-                               json={"client_message_id": "forbidden-order", "message": "查询 ORD-MY-2001 的维修进度"})
-        assert "event: human_required" in response.text
-        assert "维修处理中" not in response.text
-        response = client.post(uri + "/messages/stream", headers=headers,
-                               json={"client_message_id": "forbidden-case", "message": "申请维修，订单 ORD-MY-2001，手机无法开机"})
-        assert "event: case_draft_created" not in response.text

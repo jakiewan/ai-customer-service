@@ -28,10 +28,10 @@ def test_retriever_checks_market_even_when_backend_filter_is_broken():
 
     class WrongMarketDatabase:
         def similarity_search(self, *_args, **_kwargs):
-            return [Document(page_content="保修期 99 个月", metadata={"market": "CN", "policy_id": "wrong", "version": "1", "title": "CN", "language": "zh-CN"})]
+            return [Document(page_content="保修期 99 个月", metadata={"market": "CN", "policy_id": "wrong", "version": "1", "title": "CN", "language": "zh-CN", "goodsid": "65539", "sales_channel": "MALL"})]
 
     store.pg_vector_store = WrongMarketDatabase()
-    assert store.retrieve("手机保修期", "MY") == []
+    assert store.retrieve("手机保修期", "MY", goodsid="65539", sales_channel="MALL") == []
 
 
 def test_policy_answer_uses_document_duration_not_twelve_month_constant(tmp_path):
@@ -40,7 +40,7 @@ def test_policy_answer_uses_document_duration_not_twelve_month_constant(tmp_path
     settings = Settings(_env_file=None, policy_dir=str(tmp_path))
     with TestClient(create_app(settings)) as client:
         headers = {"X-Demo-Token": settings.demo_token}
-        created = client.post("/api/v1/conversations", headers=headers, json={"market": "CN"})
+        created = client.post("/api/v1/conversations", headers=headers, json={"market": "CN", "goodsid": "65539", "sales_channel": "MALL"})
         response = client.post("/api/v1/conversations/" + created.json()["data"]["conversation_id"] + "/messages/stream",
                                headers=headers, json={"client_message_id": "duration", "message": "手机保修期多久"})
         assert "24 个月" in response.text

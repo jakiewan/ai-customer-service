@@ -20,11 +20,11 @@ def test_unknown_mode_does_not_fall_back_to_mock(field, value):
         Settings(_env_file=None, **{field: value})
 
 
-def test_configured_but_unavailable_mcp_is_not_ready():
+def test_optional_business_tools_do_not_block_consultation_readiness():
     with TestClient(create_app(Settings(_env_file=None, mcp_mode="http", mcp_url="http://127.0.0.1:1/mcp"))) as client:
         response = client.get("/readyz")
-        assert response.status_code == 503
-        assert response.json()["data"]["status"] == "not_ready"
+        assert response.status_code == 200
+        assert response.json()["data"]["status"] == "ready"
 
 
 def test_pgvector_initialization_fallback_is_not_reported_as_ready():
@@ -53,9 +53,8 @@ def test_explicit_production_configuration_is_accepted_without_claiming_live_con
 
 @pytest.mark.parametrize("field,value", [
     ("policy_allow_fallback", True), ("embedding_mode", "hash"), ("persistence_mode", "memory"),
-    ("checkpointer_mode", "memory"), ("business_mode", "mock"), ("llm_mode", "mock"),
+    ("checkpointer_mode", "memory"), ("llm_mode", "mock"),
     ("cors_origins", "null"), ("cors_origins", "https://*.example.test"),
-    ("mcp_url", "http://tools.example.test/mcp"), ("mcp_token", ""), ("business_token", ""),
     ("database_url", "postgresql+psycopg://postgres:postgres@127.0.0.1/fixture"),
 ])
 def test_production_rejects_each_unsafe_override_without_exposing_key(production_config, field, value):

@@ -1,287 +1,199 @@
-from uuid import UUID
-
 import pytest
+from fastapi.testclient import TestClient
 
 from agent_service.app.config import Settings
 from agent_service.app.main import create_app
 from agent_service.app.schemas import CreateConversationRequest, MessageRequest
 
 
-async def collect_events(service, conversation_id, message_id: str, message: str) -> list[dict]:
+def make_service(**overrides):
+    settings = Settings(
+        _env_file=None,
+        purchase_url="https://shop.example.com",
+        aftersales_url="https://care.example.com",
+        **overrides,
+    )
+    return create_app(settings).state.conversation_service
+
+
+async def conversation(service, **scope):
+    return await service.create_conversation(
+        "owner", CreateConversationRequest(language="zh-CN", **scope)
+    )
+
+
+async def run(service, conv, message, message_id="one"):
     return [
         event
         async for event in service.stream_message(
-            conversation_id,
-            "test-token",
+            conv.conversation_id,
+            "owner",
             MessageRequest(client_message_id=message_id, message=message),
-            "trace-test",
+            "trace",
         )
     ]
 
 
-@pytest.mark.asyncio
-async def test_troubleshooting_does_not_create_case_draft() -> None:
-    app = create_app(Settings(demo_token="test-token"))
-    service = app.state.conversation_service
-    conversation = await service.create_conversation(
-        "test-token", CreateConversationRequest(channel="WEB_CHAT", market="MY", language="zh-CN")
-    )
-    events = await collect_events(service, conversation.conversation_id, "message-001", "手机无法开机怎么办")
-    output = "".join(event["data"].get("delta", "") for event in events)
-    assert "充电 30 分钟" in output
-    assert not any(event["event"] == "case_draft_created" for event in events)
+def output(events):
+    return "".join(event["data"].get("delta", "") for event in events)
 
 
 @pytest.mark.asyncio
-async def test_case_request_creates_then_reuses_draft() -> None:
-    app = create_app(Settings(demo_token="test-token"))
-    service = app.state.conversation_service
-    conversation = await service.create_conversation(
-        "test-token", CreateConversationRequest(channel="WEB_CHAT", market="MY", language="zh-CN")
-    )
-    first = await collect_events(
-        service,
-        conversation.conversation_id,
-        "message-002",
-        "我要申请售后维修，订单号 ORD-MY-2001，手机无法开机",
-    )
-    created = [event for event in first if event["event"] == "case_draft_created"]
-    assert len(created) == 1
-    first_draft_id = created[0]["data"]["case_draft_id"]
-
-    second = await collect_events(service, conversation.conversation_id, "message-003", "我还是要申请维修")
-    second_text = "".join(event["data"].get("delta", "") for event in second)
-    assert "复用" in second_text
-    assert not any(event["event"] == "case_draft_created" for event in second)
-    view = await service.draft_view(UUID(first_draft_id), "test-token")
-    assert str(view.case_draft_id) == first_draft_id
+@pytest.mark.parametrize(
+    "message,kind",
+    [
+        ("我要申请维修", "aftersales"),
+        ("在哪里申请售后维修", "aftersales"),
+        ("查询维修进度", "aftersales"),
+        ("去官网商城购买", "purchase"),
+    ],
+)
+async def test_entry_request_returns_fixed_link_without_order_information(
+    message, kind
+):
+    service = make_service()
+    conv = await conversation(service)
+    events = await run(service, conv, message)
+    assert events[-1]["data"]["action_links"][0]["service_type"] == kind
+    assert events[-1]["data"]["result_type"] == "LINK_GUIDANCE"
+    assert not any(event["event"] == "tool_call" for event in events)
+    assert "订单号或设备序列号" not in output(events)
 
 
 @pytest.mark.asyncio
-async def test_case_request_continues_when_user_supplies_missing_order_in_next_turn() -> None:
-    app = create_app(Settings(demo_token="test-token"))
-    service = app.state.conversation_service
-    conversation = await service.create_conversation(
-        "test-token", CreateConversationRequest(channel="WEB_CHAT", market="MY", language="zh-CN")
+@pytest.mark.parametrize(
+    "message",
+    [
+        "保修多久",
+        "申请维修需要什么材料",
+        "不申请维修，先了解保修",
+        "不要帮我申请维修",
+        "Please don't submit a repair request",
+    ],
+)
+async def test_information_and_negative_requests_do_not_trigger_navigation(message):
+    service = make_service()
+    conv = await conversation(
+        service, market="MY", goodsid="65539", sales_channel="MALL"
     )
-    first = await collect_events(service, conversation.conversation_id, "message-005", "我要申请售后维修")
-    first_text = "".join(event["data"].get("delta", "") for event in first)
-    assert "订单号或设备序列号" in first_text
-    assert not any(event["event"] == "case_draft_created" for event in first)
-
-    second = await collect_events(
-        service,
-        conversation.conversation_id,
-        "message-006",
-        "订单号 ORD-MY-2001，手机无法开机",
-    )
-    assert any(event["event"] == "case_draft_created" for event in second)
+    events = await run(service, conv, message)
+    assert events[-1]["data"]["action_links"] == []
 
 
 @pytest.mark.asyncio
-async def test_repair_status_returns_fact_instead_of_new_draft() -> None:
-    app = create_app(Settings(demo_token="test-token"))
-    service = app.state.conversation_service
-    conversation = await service.create_conversation(
-        "test-token", CreateConversationRequest(channel="WEB_CHAT", market="MY", language="zh-CN")
+async def test_missing_scope_is_collected_across_turns():
+    service = make_service()
+    conv = await conversation(service)
+    first = await run(service, conv, "保修多久", "first")
+    assert "购买国家" in output(first)
+    second = await run(service, conv, "中国", "second")
+    assert "三级品类" in output(second) and "销售渠道" in output(second)
+    third = await run(service, conv, "65539", "third")
+    assert "销售渠道" in output(third)
+    fourth = await run(service, conv, "商城", "fourth")
+    assert "12 个月" in output(fourth)
+    evidence = next(
+        event["data"] for event in fourth if event["event"] == "policy_evidence"
     )
-    events = await collect_events(
-        service, conversation.conversation_id, "message-004", "查询订单 ORD-MY-2001 的维修进度"
+    assert (evidence["market"], evidence["goodsid"], evidence["sales_channel"]) == (
+        "CN",
+        "65539",
+        "MALL",
     )
-    output = "".join(event["data"].get("delta", "") for event in events)
-    assert "维修处理中" in output
-    assert not any(event["event"] == "case_draft_created" for event in events)
 
 
 @pytest.mark.asyncio
-async def test_case_request_does_not_reuse_identifier_from_status_intent() -> None:
-    app = create_app(Settings(demo_token="test-token"))
-    service = app.state.conversation_service
-    conversation = await service.create_conversation(
-        "test-token", CreateConversationRequest(channel="WEB_CHAT", market="MY", language="zh-CN")
+async def test_policy_question_and_entry_can_be_returned_together():
+    service = make_service()
+    conv = await conversation(
+        service, market="MY", goodsid="65539", sales_channel="DIRECT"
     )
-    await collect_events(
-        service,
-        conversation.conversation_id,
-        "message-011",
-        "查询维修进度，订单号 ORD-MY-2001",
+    events = await run(service, conv, "申请维修需要什么材料？请给申请入口")
+    assert "官方售后页面" in output(events)
+    assert any(event["event"] == "policy_evidence" for event in events)
+    assert events[-1]["data"]["action_links"][0]["url"] == "https://care.example.com"
+
+
+@pytest.mark.asyncio
+async def test_link_and_citations_survive_history_and_idempotent_replay():
+    service = make_service()
+    conv = await conversation(
+        service, market="MY", goodsid="65539", sales_channel="MALL"
     )
-    next_events = await collect_events(
-        service,
-        conversation.conversation_id,
-        "message-012",
-        "我要申请售后维修",
+    message = "申请维修材料说明和申请入口"
+    first = await run(service, conv, message)
+    replay = await run(service, conv, message)
+    assert output(first) == output(replay)
+    assert first[-1]["data"]["action_links"] == replay[-1]["data"]["action_links"]
+    view = await service.conversation_view(conv.conversation_id, "owner")
+    assert len(view.messages) == 2
+    assert view.messages[-1].action_links[0].url == "https://care.example.com"
+    assert view.messages[-1].citations
+
+
+@pytest.mark.asyncio
+async def test_unconfigured_entry_reports_unavailable_instead_of_guessing_url():
+    service = create_app(Settings(_env_file=None)).state.conversation_service
+    conv = await conversation(service)
+    events = await run(service, conv, "我要申请维修")
+    assert "暂未配置" in output(events)
+    assert events[-1]["data"]["action_links"] == []
+
+
+@pytest.mark.asyncio
+async def test_personal_business_queries_are_not_called(monkeypatch):
+    from agent_service.app.business import MockBusinessGateway
+
+    async def forbidden(*_args, **_kwargs):
+        raise AssertionError("入口流程不得查询个人业务")
+
+    for name in ("query_order", "query_device", "query_repair_status"):
+        monkeypatch.setattr(MockBusinessGateway, name, forbidden)
+    service = make_service()
+    conv = await conversation(service)
+    events = await run(service, conv, "申请维修，订单 ORD-MY-2001")
+    assert events[-1]["data"]["action_links"]
+    assert not any(event["event"] == "error" for event in events)
+
+
+@pytest.mark.asyncio
+async def test_different_category_does_not_keep_phone_policy():
+    service = make_service()
+    conv = await conversation(
+        service, market="CN", goodsid="65539", sales_channel="MALL"
     )
-    output = "".join(event["data"].get("delta", "") for event in next_events)
-    assert "订单号或设备序列号" in output
-    assert not any(event["event"] == "case_draft_created" for event in next_events)
-
-
-@pytest.mark.asyncio
-async def test_existing_draft_does_not_override_unrelated_intents() -> None:
-    app = create_app(Settings(demo_token="test-token"))
-    service = app.state.conversation_service
-    conversation = await service.create_conversation(
-        "test-token", CreateConversationRequest(channel="WEB_CHAT", market="MY", language="zh-CN")
-    )
-    await collect_events(
-        service,
-        conversation.conversation_id,
-        "message-013",
-        "我要申请售后维修，订单号 ORD-MY-2001，手机无法开机",
-    )
-
-    unsupported = await collect_events(
-        service, conversation.conversation_id, "message-014", "智能手表维修"
-    )
-    unsupported_text = "".join(event["data"].get("delta", "") for event in unsupported)
-    assert any(event["event"] == "human_required" for event in unsupported)
-    assert "可靠的政策或业务事实" in unsupported_text
-    assert not any(event["event"] == "case_draft_created" for event in unsupported)
-
-    general = await collect_events(service, conversation.conversation_id, "message-015", "你好")
-    general_text = "".join(event["data"].get("delta", "") for event in general)
-    assert "查询保修政策" in general_text
-    assert not any(event["event"] == "case_draft_created" for event in general)
-
-
-@pytest.mark.asyncio
-async def test_multiple_turns_do_not_consume_next_turn_step_budget() -> None:
-    app = create_app(Settings(demo_token="test-token"))
-    service = app.state.conversation_service
-    conversation = await service.create_conversation(
-        "test-token", CreateConversationRequest(channel="WEB_CHAT", market="MY", language="zh-CN")
-    )
-    await collect_events(service, conversation.conversation_id, "message-007", "手机无法开机怎么办")
-    await collect_events(service, conversation.conversation_id, "message-008", "保修政策是什么")
-    third = await collect_events(
-        service, conversation.conversation_id, "message-009", "查询订单 ORD-MY-2001 的维修进度"
-    )
-    assert not any(event["event"] == "error" for event in third)
-    text = "".join(event["data"].get("delta", "") for event in third)
-    assert "维修处理中" in text
-
-
-@pytest.mark.asyncio
-async def test_message_over_budget_stops_before_graph_execution() -> None:
-    app = create_app(Settings(demo_token="test-token", token_budget=1))
-    service = app.state.conversation_service
-    conversation = await service.create_conversation(
-        "test-token", CreateConversationRequest(channel="WEB_CHAT", market="MY", language="zh-CN")
-    )
-    events = await collect_events(service, conversation.conversation_id, "message-010", "手机无法开机怎么办")
-    errors = [event for event in events if event["event"] == "error"]
-    assert errors[0]["data"]["code"] == "AGENT_BUDGET_EXCEEDED"
-
-
-@pytest.mark.asyncio
-async def test_another_phone_collects_identifier_instead_of_reusing_old_draft():
-    app = create_app(Settings(_env_file=None, demo_token="test-token"))
-    service = app.state.conversation_service
-    conversation = await service.create_conversation("test-token", CreateConversationRequest(market="MY"))
-    await collect_events(service, conversation.conversation_id, "old-phone", "申请维修，订单 ORD-MY-2001，手机无法开机")
-    events = await collect_events(service, conversation.conversation_id, "new-phone", "另一台手机我要申请维修")
-    text = "".join(event["data"].get("delta", "") for event in events)
-    assert "订单号或设备序列号" in text
-    assert "复用" not in text
-    assert (await service.conversation_view(conversation.conversation_id, "test-token")).case_draft_id is None
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize("cancel_message", ["不要申请维修", "不要帮我申请维修", "我不打算申请售后"])
-async def test_market_only_response_resumes_case_but_cancel_does_not(cancel_message):
-    app = create_app(Settings(_env_file=None, demo_token="test-token"))
-    service = app.state.conversation_service
-    conversation = await service.create_conversation("test-token", CreateConversationRequest())
-    await collect_events(service, conversation.conversation_id, "missing-market", "申请维修，订单 ORD-CN-1001，手机无法开机")
-    continued = await collect_events(service, conversation.conversation_id, "country-only", "中国 CN")
-    assert any(event["event"] == "case_draft_created" for event in continued)
-    other = await service.create_conversation("test-token", CreateConversationRequest(market="MY"))
-    await collect_events(service, other.conversation_id, "ask-order", "我要申请维修")
-    cancelled = await collect_events(service, other.conversation_id, "cancel-with-order", cancel_message + "，订单 ORD-MY-2001")
-    assert not any(event["event"] == "case_draft_created" for event in cancelled)
-
-
-@pytest.mark.asyncio
-async def test_how_to_apply_is_information_not_write_consent():
-    app = create_app(Settings(_env_file=None, demo_token="test-token"))
-    service = app.state.conversation_service
-    conversation = await service.create_conversation("test-token", CreateConversationRequest(market="MY"))
-    await collect_events(service, conversation.conversation_id, "existing-context", "订单 ORD-MY-2001 手机无法开机怎么办")
-    events = await collect_events(service, conversation.conversation_id, "procedure-question", "申请维修需要什么材料")
-    assert not any(event["event"] == "case_draft_created" for event in events)
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize("message", [
-    "我不想申请维修，订单 ORD-MY-2001",
-    "不要帮我申请维修，订单 ORD-MY-2001",
-    "请不要替我报修，订单 ORD-MY-2001",
-    "我不打算申请售后，订单 ORD-MY-2001",
-    "申请维修要怎么弄，订单 ORD-MY-2001",
-    "申请维修怎么操作，订单 ORD-MY-2001",
-    "Please don't submit a repair request, order ORD-MY-2001",
-    "I'm not asking you to create a repair request, order ORD-MY-2001",
-])
-async def test_negative_or_procedure_request_does_not_create_draft(message):
-    service = create_app(Settings(_env_file=None, demo_token="test-token")).state.conversation_service
-    conversation = await service.create_conversation("test-token", CreateConversationRequest(market="MY", language="zh-CN"))
-    events = await collect_events(service, conversation.conversation_id, "not-consent", message)
-    assert not any(event["event"] == "case_draft_created" for event in events)
-    assert (await service.conversation_view(conversation.conversation_id, "test-token")).case_draft_id is None
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize("message", ["我要申请维修，订单 ORD-MY-2001", "请帮我申请维修，订单 ORD-MY-2001", "不想麻烦你，我要申请维修，订单 ORD-MY-2001", "My phone is not charging, I need a repair request, order ORD-MY-2001"])
-async def test_affirmative_request_still_creates_draft(message):
-    service = create_app(Settings(_env_file=None, demo_token="test-token")).state.conversation_service
-    conversation = await service.create_conversation("test-token", CreateConversationRequest(market="MY"))
-    events = await collect_events(service, conversation.conversation_id, "consent", message)
-    assert any(event["event"] == "case_draft_created" for event in events)
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize("message", ["How long is my phone warranty?", "My phone cannot power on", "HOW LONG IS MY PHONE WARRANTY?", "I want a repair request for my phone, order ORD-CN-1001, cannot power on"])
-async def test_english_possessive_preserves_cn_market(message):
-    service = create_app(Settings(_env_file=None, demo_token="test-token")).state.conversation_service
-    conversation = await service.create_conversation("test-token", CreateConversationRequest(market="CN", language="en-MY"))
-    events = await collect_events(service, conversation.conversation_id, "english-cn", message)
-    assert (await service.conversation_view(conversation.conversation_id, "test-token")).market == "CN"
-    assert all(event["data"]["market"] == "CN" for event in events if event["event"] == "policy_evidence")
-
-
-@pytest.mark.asyncio
-async def test_english_possessive_without_market_still_asks_purchase_country():
-    service = create_app(Settings(_env_file=None, demo_token="test-token")).state.conversation_service
-    conversation = await service.create_conversation("test-token", CreateConversationRequest())
-    events = await collect_events(service, conversation.conversation_id, "unknown-country", "How long is my phone warranty?")
-    assert "购买国家" in "".join(event["data"].get("delta", "") for event in events)
+    await run(service, conv, "手机保修", "phone")
+    events = await run(service, conv, "电脑保修", "computer")
+    assert "没有匹配" in output(events)
     assert not any(event["event"] == "policy_evidence" for event in events)
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("message", ["保修政策是什么", "你好", "查询维修进度", "我还是要申请维修"])
-async def test_replay_does_not_add_draft_event_to_unrelated_or_reuse_response(message):
-    service = create_app(Settings(_env_file=None, demo_token="test-token")).state.conversation_service
-    conversation = await service.create_conversation("test-token", CreateConversationRequest(market="MY"))
-    await collect_events(service, conversation.conversation_id, "original-case", "申请维修，订单 ORD-MY-2001，手机无法开机")
-    first = await collect_events(service, conversation.conversation_id, "same-id", message)
-    before = await service.conversation_view(conversation.conversation_id, "test-token")
-    repeated = await collect_events(service, conversation.conversation_id, "same-id", message)
-    assert not any(event["event"] == "case_draft_created" for event in first)
-    assert not any(event["event"] == "case_draft_created" for event in repeated)
-    assert "".join(event["data"].get("delta", "") for event in first) == "".join(event["data"].get("delta", "") for event in repeated)
-    assert len((await service.conversation_view(conversation.conversation_id, "test-token")).messages) == len(before.messages)
+async def test_english_possessive_preserves_confirmed_cn_market():
+    service = make_service()
+    conv = await conversation(
+        service, market="CN", goodsid="65539", sales_channel="MALL"
+    )
+    events = await run(service, conv, "How long is my phone warranty?")
+    assert (
+        await service.conversation_view(conv.conversation_id, "owner")
+    ).market == "CN"
+    assert all(
+        event["data"]["market"] == "CN"
+        for event in events
+        if event["event"] == "policy_evidence"
+    )
 
 
-@pytest.mark.asyncio
-async def test_created_draft_replay_preserves_payload_and_does_not_write_again():
-    service = create_app(Settings(_env_file=None, demo_token="test-token")).state.conversation_service
-    conversation = await service.create_conversation("test-token", CreateConversationRequest(market="MY"))
-    message = "申请维修，订单 ORD-MY-2001，手机无法开机"
-    first = await collect_events(service, conversation.conversation_id, "created", message)
-    repeated = await collect_events(service, conversation.conversation_id, "created", message)
-    original = next(event["data"] for event in first if event["event"] == "case_draft_created")
-    replayed = next(event["data"] for event in repeated if event["event"] == "case_draft_created")
-    assert replayed == {**original, "idempotent_replay": True}
-    assert len((await service.conversation_view(conversation.conversation_id, "test-token")).messages) == 2
+def test_removed_business_endpoint_is_not_in_openapi():
+    with TestClient(create_app(Settings(_env_file=None))) as client:
+        assert not any(
+            "case-drafts" in path
+            for path in client.get("/openapi.json").json()["paths"]
+        )
+        assert (
+            client.get(
+                "/api/v1/case-drafts/00000000-0000-0000-0000-000000000000"
+            ).status_code
+            == 404
+        )

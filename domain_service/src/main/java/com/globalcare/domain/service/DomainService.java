@@ -1,17 +1,13 @@
 package com.globalcare.domain.service;
 
-import com.globalcare.domain.model.CaseDraftRequest;
-import com.globalcare.domain.model.CaseDraftResponse;
 import com.globalcare.domain.model.DeviceView;
 import com.globalcare.domain.model.OrderView;
 import com.globalcare.domain.model.RepairStatusView;
 import com.globalcare.domain.model.ServiceCenterView;
 import org.springframework.stereotype.Service;
 
-import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Map;
-import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 @Service
@@ -23,11 +19,8 @@ public class DomainService {
     private static final String MY_SERIAL_NUMBER = "SN-MY-2001";
     private static final String STATUS_RECEIVED = "RECEIVED";
     private static final String STATUS_IN_REPAIR = "IN_REPAIR";
-    private static final String CASE_DRAFT_CREATED = "DRAFT_CREATED";
 
     private final Map<String, OrderView> orders = new ConcurrentHashMap<>();
-    private final Map<String, CaseDraftResponse> draftsByFingerprint = new ConcurrentHashMap<>();
-    private final Map<String, CaseDraftResponse> draftsById = new ConcurrentHashMap<>();
 
     public DomainService() {
         addOrder(new OrderView(
@@ -92,56 +85,6 @@ public class DomainService {
                 order.repairStatus(),
                 statusLabel(order.repairStatus())
         );
-    }
-
-    public CaseDraftResponse createCaseDraft(CaseDraftRequest request) {
-        CaseDraftResponse existing = draftsByFingerprint.get(request.draftFingerprint());
-        if (existing != null) {
-            return new CaseDraftResponse(
-                    existing.caseDraftId(),
-                    existing.status(),
-                    existing.conversationId(),
-                    existing.draftFingerprint(),
-                    true,
-                    existing.createdAt(),
-                    existing.payload()
-            );
-        }
-        String draftId = UUID.randomUUID().toString();
-        OffsetDateTime createdAt = OffsetDateTime.now();
-        Map<String, Object> payload = Map.ofEntries(
-                Map.entry("market", request.market()),
-                Map.entry("language", request.language()),
-                Map.entry("issue_category", request.issueCategory()),
-                Map.entry("issue_summary", request.issueSummary()),
-                Map.entry("suggested_resolution", request.suggestedResolution()),
-                Map.entry("customer_context", request.customerContext()),
-                Map.entry("policy_evidence", request.policyEvidence()),
-                Map.entry("tool_trace_ids", request.toolTraceIds()),
-                Map.entry("order_id", request.orderId() == null ? "" : request.orderId()),
-                Map.entry("serial_number", request.serialNumber() == null ? "" : request.serialNumber()),
-                Map.entry("product_model", request.productModel() == null ? "" : request.productModel())
-        );
-        CaseDraftResponse response = new CaseDraftResponse(
-                draftId,
-                CASE_DRAFT_CREATED,
-                request.conversationId(),
-                request.draftFingerprint(),
-                false,
-                createdAt,
-                payload
-        );
-        draftsByFingerprint.put(request.draftFingerprint(), response);
-        draftsById.put(draftId, response);
-        return response;
-    }
-
-    public CaseDraftResponse getCaseDraft(String draftId) {
-        CaseDraftResponse response = draftsById.get(draftId);
-        if (response == null) {
-            throw new DomainNotFoundException("Case Draft 不存在", "CASE_DRAFT_NOT_FOUND");
-        }
-        return response;
     }
 
     public List<ServiceCenterView> getServiceCenters(String market) {

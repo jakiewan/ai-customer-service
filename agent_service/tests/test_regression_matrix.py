@@ -31,13 +31,13 @@ INTENT_CASES = [
     ("Where is my repair?", Intent.REPAIR_STATUS),
     ("Can I check repair status", Intent.REPAIR_STATUS),
     ("工单修好了吗", Intent.REPAIR_STATUS),
-    ("我要申请售后维修", Intent.CASE_REQUEST),
-    ("我要申请维修", Intent.CASE_REQUEST),
-    ("手机需要报修", Intent.CASE_REQUEST),
-    ("请帮我送修", Intent.CASE_REQUEST),
-    ("创建案例", Intent.CASE_REQUEST),
-    ("I need a repair request", Intent.CASE_REQUEST),
-    ("I want after-sales service", Intent.CASE_REQUEST),
+    ("我要申请售后维修", Intent.AFTERSALES_LINK),
+    ("我要申请维修", Intent.AFTERSALES_LINK),
+    ("手机需要报修", Intent.AFTERSALES_LINK),
+    ("请帮我送修", Intent.AFTERSALES_LINK),
+    ("售后申请入口", Intent.AFTERSALES_LINK),
+    ("I need a repair request", Intent.AFTERSALES_LINK),
+    ("I want after-sales service", Intent.AFTERSALES_LINK),
     ("保修期多久", Intent.FAQ),
     ("保修政策是什么", Intent.FAQ),
     ("维修需要什么材料", Intent.FAQ),
@@ -98,7 +98,7 @@ RAG_CASES = [
 @pytest.mark.parametrize("query,market,expected_policy", RAG_CASES, ids=[f"rag-positive-{index:02d}" for index in range(1, 41)])
 def test_rag_market_and_evidence_matrix(query: str, market: Market, expected_policy: str) -> None:
     store = PolicyStore("agent_service/data/policies")
-    evidence = store.retrieve(query, market, top_k=2)
+    evidence = store.retrieve(query, market, top_k=2, goodsid="65539", sales_channel="MALL")
     assert evidence
     assert evidence[0].policy_id == expected_policy
     assert all(item.market == market for item in evidence)
@@ -132,8 +132,8 @@ NEGATIVE_RAG_CASES = [
 @pytest.mark.parametrize("query", NEGATIVE_RAG_CASES, ids=[f"rag-negative-{index:02d}" for index in range(1, 21)])
 def test_rag_negative_and_high_risk_matrix(query: str) -> None:
     store = PolicyStore("agent_service/data/policies")
-    assert store.retrieve(query, Market.MY) == []
-    assert store.retrieve(query, Market.CN) == []
+    assert store.retrieve(query, Market.MY, goodsid="65539", sales_channel="MALL") == []
+    assert store.retrieve(query, Market.CN, goodsid="65539", sales_channel="MALL") == []
 
 
 BUSINESS_CASES = [
@@ -171,23 +171,21 @@ async def test_business_gateway_matrix(operation: str, identifier: str, expected
 GRAPH_CASES = [
     ("手机无法开机怎么办", "faq_steps", "充电 30 分钟"),
     ("保修期多久", "policy_answer", "12 个月"),
-    ("查询订单 ORD-MY-2001 的维修进度", "status", "维修处理中"),
-    ("我要申请售后维修，订单号 ORD-MY-2001，手机无法开机", "draft", "Case Draft"),
-    ("我要申请售后维修", "missing", "订单号或设备序列号"),
-    ("退款要怎么处理", "human", "无法基于可靠的政策"),
-    ("我要申请售后维修，订单号 ORD-NO-9999", "missing", "订单不存在"),
-    # 不从订单号前缀猜购买国；MY 请求与 CN 业务事实冲突时必须拒绝。
-    ("我要申请售后维修，订单号 ORD-CN-1001", "market_conflict", "市场不一致"),
-    ("查询维修进度", "missing", "订单号或设备序列号"),
-    ("你好", "general", "售后问题"),
+    ("查询订单 ORD-MY-2001 的维修进度", "status", "官方售后入口"),
+    ("我要申请售后维修，手机无法开机", "application", "官方售后入口"),
+    ("我要申请售后维修", "application_simple", "官方售后入口"),
+    ("退款要怎么处理", "human", "没有匹配"),
+    ("在哪里申请维修", "navigation", "官方售后入口"),
+    ("去官网商城购买", "purchase", "官网商城"),
+    ("查询维修进度", "status_simple", "官方售后入口"),
+    ("你好", "general", "请描述你的问题"),
 ]
 
-
 async def _run_graph_case(message: str, expected_kind: str) -> str:
-    app = create_app(Settings(demo_token="matrix-token"))
+    app = create_app(Settings(_env_file=None, demo_token="matrix-token", purchase_url="https://shop.example.com", aftersales_url="https://care.example.com"))
     service = app.state.conversation_service
     conversation = await service.create_conversation(
-        "matrix-token", CreateConversationRequest(channel="WEB_CHAT", market="MY", language="zh-CN")
+        "matrix-token", CreateConversationRequest(channel="WEB_CHAT", market="MY", language="zh-CN", goodsid="65539", sales_channel="MALL")
     )
     events = [
         event
@@ -222,8 +220,8 @@ API_CASES = [
     ("empty_message", 400),
     ("invalid_message_id", 400),
     ("invalid_conversation_uuid", 400),
-    ("missing_draft_token", 401),
-    ("unknown_draft_with_token", 404),
+    ("removed_endpoint", 404),
+    ("invalid_goodsid", 400),
     ("conversation_view_with_token", 200),
     ("stream_with_token", 200),
     ("audit_with_token", 200),
@@ -278,10 +276,10 @@ def test_api_contract_and_security_matrix(case: str, expected_status: int) -> No
         )
     elif case == "invalid_conversation_uuid":
         response = client.get("/api/v1/conversations/not-a-uuid", headers=headers)
-    elif case == "missing_draft_token":
+    elif case == "removed_endpoint":
         response = client.get("/api/v1/case-drafts/00000000-0000-0000-0000-000000000000")
-    elif case == "unknown_draft_with_token":
-        response = client.get("/api/v1/case-drafts/00000000-0000-0000-0000-000000000000", headers=headers)
+    elif case == "invalid_goodsid":
+        response = client.post("/api/v1/conversations", headers=headers, json={"goodsid": "phone"})
     elif case == "openapi":
         response = client.get("/openapi.json")
     elif case == "docs":
@@ -290,7 +288,7 @@ def test_api_contract_and_security_matrix(case: str, expected_status: int) -> No
         created = client.post(
             "/api/v1/conversations",
             headers=headers,
-            json={"channel": "WEB_CHAT", "market": "MY", "language": "zh-CN"},
+            json={"channel": "WEB_CHAT", "market": "MY", "language": "zh-CN", "goodsid": "65539", "sales_channel": "MALL"},
         )
         conversation_id = created.json()["data"]["conversation_id"]
         if case == "conversation_view_with_token":

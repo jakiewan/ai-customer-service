@@ -4,9 +4,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 > 全局语言规则：用户偏好中文，所有 thinking 与对外回复统一使用中文（技术术语、代码标识符、第三方工具名保留英文）。见 `~/.claude/CLAUDE.md`。
 
-## 项目一句话
+## 当前业务契约（2026-10-14，优先于历史章节）
 
-GlobalCare Web 售后 Case 智能受理 Agent MVP。LangGraph 状态机 + LangChain + FastMCP + FastAPI + Vue 3 真实联调；下游业务由 Spring Boot 模拟（脱敏）。Agent **只能**通过 MCP 查询订单/设备/维修进度,Case Draft 由**应用节点**调用 Spring Boot 接口完成,**模型没有写工具权限**。
+GlobalCare 商品与售后咨询 Agent。政策按 `market + goodsid + sales_channel` 唯一匹配；goodsid 是三级品类 ID，SKU/型号/地区/日期不参与政策过滤。当前客服不调用个人业务工具；购买/申请通过固定 URL 引导，用户在官方页面办理。入口 URL 来自环境配置，不由模型生成。草稿业务代码和接口已移除。
+
+本轮不新增 PG 知识表，保留既有会话/消息/审计/锁和 checkpoint。消息链接落既有消息表，先执行迁移。修改请遵守最小修改原则，不因企业级表述增加 Redis、多层 FAQ、费用账本或其他新平台。
+
+下列章节为历史运行说明，旧草稿路径不再生效；当前命令与范围见 README.md 和技术方案.md。
 
 ## 常用命令
 

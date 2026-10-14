@@ -11,7 +11,7 @@ def test_api_creates_conversation_and_streams_sse() -> None:
     created = client.post(
         "/api/v1/conversations",
         headers=headers,
-        json={"channel": "WEB_CHAT", "market": "MY", "language": "zh-CN"},
+        json={"channel": "WEB_CHAT", "market": "MY", "language": "zh-CN", "goodsid": "65539", "sales_channel": "MALL"},
     )
     assert created.status_code == 200
     conversation_id = created.json()["data"]["conversation_id"]
@@ -25,8 +25,8 @@ def test_api_creates_conversation_and_streams_sse() -> None:
     assert "event: policy_evidence" in response.text
     assert "event: done" in response.text
 
-    unauthenticated_draft = client.get("/api/v1/case-drafts/00000000-0000-0000-0000-000000000000")
-    assert unauthenticated_draft.status_code == 401
+    removed_endpoint = client.get("/api/v1/case-drafts/00000000-0000-0000-0000-000000000000")
+    assert removed_endpoint.status_code == 404
 
     view = client.get(f"/api/v1/conversations/{conversation_id}", headers=headers)
     assert view.status_code == 200

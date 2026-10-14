@@ -1,6 +1,5 @@
 -- 增量迁移：保留旧数据；会话状态与请求结果独立于 LangGraph checkpoint。
 ALTER TABLE conversations ADD COLUMN IF NOT EXISTS state JSONB NOT NULL DEFAULT '{}'::jsonb;
-ALTER TABLE conversations ADD COLUMN IF NOT EXISTS case_draft_id UUID;
 
 CREATE TABLE IF NOT EXISTS agent_message_requests (
     conversation_id UUID NOT NULL REFERENCES conversations(conversation_id),

@@ -22,27 +22,26 @@ def database_url():
     return url
 
 
-def test_new_app_recovers_messages_draft_audit_and_completed_request(database_url):
-    settings = Settings(_env_file=None, persistence_mode="postgres", database_url=database_url, demo_token="restart-test")
+def test_new_app_recovers_message_links_audit_and_completed_request(database_url):
+    settings = Settings(_env_file=None, persistence_mode="postgres", database_url=database_url, demo_token="restart-test", aftersales_url="https://care.example.com")
     headers = {"X-Demo-Token": "restart-test"}
-    body = {"client_message_id": "persistent-request", "message": "我要申请维修，订单 ORD-MY-2001，手机无法开机"}
+    body = {"client_message_id": "persistent-request", "message": "我要申请维修"}
     with TestClient(create_app(settings)) as first:
         created = first.post("/api/v1/conversations", headers=headers, json={"market": "MY"})
         uri = "/api/v1/conversations/" + created.json()["data"]["conversation_id"]
         response = first.post(uri + "/messages/stream", headers=headers, json=body)
-        assert "event: case_draft_created" in response.text
+        assert "https://care.example.com" in response.text
         before = first.get(uri, headers=headers).json()["data"]
+        assert before["messages"][-1]["action_links"][0]["url"] == "https://care.example.com"
     with TestClient(create_app(settings)) as restarted:
         restored = restarted.get(uri, headers=headers)
-        assert restored.status_code == 200
         assert restored.json()["data"] == before
-        draft_id = before["case_draft_id"]
-        assert restarted.get("/api/v1/case-drafts/" + draft_id, headers=headers).status_code == 200
         replay = restarted.post(uri + "/messages/stream", headers=headers, json=body)
-        assert '"idempotent_replay": true' in replay.text
+        assert "https://care.example.com" in replay.text
         assert restarted.get(uri, headers=headers).json()["data"]["messages"] == before["messages"]
         audit = restarted.get(uri + "/audit", headers=headers).json()["data"]
         assert sum(item["event_type"] == "AGENT_RUN_COMPLETED" for item in audit) == 1
+
 
 
 @pytest.mark.asyncio
@@ -68,27 +67,25 @@ async def test_concurrent_same_request_has_one_message_pair_and_one_completion(d
 
 
 @pytest.mark.parametrize("message", ["保修政策是什么", "我还是要申请维修"])
-def test_restart_replay_does_not_report_historical_draft_as_new_event(database_url, message):
-    settings = Settings(_env_file=None, persistence_mode="postgres", database_url=database_url, demo_token="restart-test")
+def test_restart_replay_preserves_each_messages_own_links(database_url, message):
+    settings = Settings(_env_file=None, persistence_mode="postgres", database_url=database_url, demo_token="restart-test", aftersales_url="https://care.example.com")
     headers = {"X-Demo-Token": "restart-test"}
-    body = {"client_message_id": "not-created-this-round", "message": message}
+    body = {"client_message_id": "second-request", "message": message}
     with TestClient(create_app(settings)) as first:
-        created = first.post("/api/v1/conversations", headers=headers, json={"market": "MY"})
+        created = first.post("/api/v1/conversations", headers=headers, json={"market": "MY", "goodsid": "65539", "sales_channel": "MALL"})
         uri = "/api/v1/conversations/" + created.json()["data"]["conversation_id"]
-        draft = first.post(uri + "/messages/stream", headers=headers, json={
-            "client_message_id": "original-draft", "message": "申请维修，订单 ORD-MY-2001，手机无法开机",
-        })
-        assert "event: case_draft_created" in draft.text
+        first.post(uri + "/messages/stream", headers=headers, json={"client_message_id": "entry", "message": "我要申请维修"})
         response = first.post(uri + "/messages/stream", headers=headers, json=body)
-        assert "event: case_draft_created" not in response.text
         before = first.get(uri, headers=headers).json()["data"]
-        assert before["case_draft_id"] is not None
+        if message.startswith("保修"):
+            assert before["messages"][-1]["action_links"] == []
+        else:
+            assert before["messages"][-1]["action_links"]
     with TestClient(create_app(settings)) as restarted:
         replay = restarted.post(uri + "/messages/stream", headers=headers, json=body)
-        assert replay.status_code == 200
-        assert "event: done" in replay.text
-        assert "event: case_draft_created" not in replay.text
+        assert replay.status_code == 200 and "event: done" in replay.text
         assert restarted.get(uri, headers=headers).json()["data"]["messages"] == before["messages"]
+
 
 
 @pytest.mark.parametrize("backend", ["memory", "postgres"])

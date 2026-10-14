@@ -51,7 +51,7 @@ def pg_store() -> PolicyStore:
 
 @pytest.mark.parametrize("query,market,expected_policy", PG_RAG_CASES, ids=[f"pg-rag-{index:02d}" for index in range(1, 21)])
 def test_real_pgvector_rag_market_and_guard(pg_store: PolicyStore, query: str, market: Market, expected_policy: str | None) -> None:
-    evidence = pg_store.retrieve(query, market, top_k=2)
+    evidence = pg_store.retrieve(query, market, top_k=2, goodsid="65539", sales_channel="MALL")
     if expected_policy is None:
         assert evidence == []
         return

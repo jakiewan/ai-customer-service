@@ -11,15 +11,15 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 class GlobalExceptionHandlerTest {
 
     @Test
-    void shouldKeepSpecificCaseDraftNotFoundCode() {
+    void shouldKeepSpecificOrderNotFoundCode() {
         GlobalExceptionHandler handler = new GlobalExceptionHandler();
 
         ResponseEntity<ApiError> response = handler.handleNotFound(
-                new DomainNotFoundException("Case Draft 不存在", "CASE_DRAFT_NOT_FOUND")
+                new DomainNotFoundException("订单不存在", "ORDER_NOT_FOUND")
         );
 
         assertEquals(HttpStatus.NOT_FOUND, response.getStatusCode());
-        assertEquals("CASE_DRAFT_NOT_FOUND", response.getBody().code());
+        assertEquals("ORDER_NOT_FOUND", response.getBody().code());
         assertEquals(false, response.getBody().retryable());
     }
 }
