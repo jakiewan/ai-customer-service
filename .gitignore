@@ -94,3 +94,7 @@ experience/*.docx
 *.md
 *.html
 
+# 运行时政策资料需随代码交付，其余本地 Markdown 仍保留忽略规则。
+!agent_service/data/policies/*.md
+*/tests/*
+
