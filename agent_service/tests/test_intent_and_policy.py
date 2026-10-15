@@ -1,7 +1,7 @@
 import pytest
 
 from agent_service.app.constants import Intent, Market
-from agent_service.app.intent import classify_intent, extract_context
+from agent_service.app.intent import classify_intent, extract_context, resolve_product_reference
 from agent_service.app.knowledge_base import KnowledgeStore
 
 
@@ -54,3 +54,37 @@ def test_layer2_matches_faq_within_group_and_returns_mainland_answer() -> None:
 )
 def test_text_does_not_switch_mainland_market(text):
     assert extract_context(text).market == Market.CN
+
+
+@pytest.mark.parametrize("subject,question,expected", [
+    ("iphone17有什么颜色?", "他内存有什么?", "iPhone 17内存有什么?"),
+    ("iPhone 17 Pro Max怎么购买", "这款手机保修多久", "iPhone 17 Pro Max保修多久"),
+    ("型号 AB-12，无法开机", "它怎么维修", "AB-12怎么维修"),
+    ("空调不制冷怎么办", "那它保修多久", "空调保修多久"),
+    ("iphone17有什么颜色?", "这台电脑保修多久", "电脑保修多久"),
+    ("iphone17有什么颜色?", "这款iPhone16保修多久", "这款iPhone16保修多久"),
+])
+def test_product_reference_uses_only_user_subjects(subject, question, expected):
+    history = [
+        {"role": "user", "content": subject},
+        {"role": "assistant", "content": "建议看看 iPhone 16"},
+    ]
+    assert resolve_product_reference(question, history) == (expected, [])
+
+
+@pytest.mark.parametrize("history,candidates", [
+    ([], []),
+    ([{"role": "assistant", "content": "iPhone 17"}], []),
+    ([{"role": "user", "content": "iPhone17和iPhone16有什么区别"}], ["iPhone 17", "iPhone 16"]),
+    ([{"role": "user", "content": "iPhone17和电脑哪个好"}], ["iPhone 17", "电脑"]),
+])
+def test_product_reference_does_not_guess(history, candidates):
+    assert resolve_product_reference("它保修多久", history) == (None, candidates)
+
+
+def test_explicit_product_switch_wins_over_previous_subject():
+    history = [{"role": "user", "content": "iPhone17"}, {"role": "user", "content": "电脑保修"}]
+    assert resolve_product_reference("它保修多久", history) == ("电脑保修多久", [])
+    assert resolve_product_reference("iPhone16保修多久", history) == ("iPhone16保修多久", [])
+    ambiguous = [{"role": "user", "content": "iPhone17和iPhone16"}]
+    assert resolve_product_reference("这款手机保修多久", ambiguous) == (None, ["iPhone 17", "iPhone 16"])

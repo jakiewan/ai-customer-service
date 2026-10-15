@@ -12,12 +12,13 @@
 """
 
 import json
+import os
 import sys
 import uuid
 
 import httpx
 
-BASE_URL = "http://127.0.0.1:8000"
+BASE_URL = os.getenv("GLOBALCARE_BASE_URL", "http://127.0.0.1:18000")
 TOKEN = "globalcare-demo-token"
 HEADERS = {"X-Demo-Token": TOKEN, "Content-Type": "application/json"}
 
@@ -87,6 +88,7 @@ def _render_event(event_name: str, payload: dict, reply_chunks: list[str]) -> No
 def main() -> None:
     with httpx.Client() as client:
         try:
+            client.get(f"{BASE_URL}/").raise_for_status()
             conversation_id = create_conversation(client)
         except httpx.HTTPError as exc:
             print(f"无法创建会话,请确认 FastAPI 服务已启动: {exc}", file=sys.stderr)

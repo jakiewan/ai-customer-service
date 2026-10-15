@@ -4,6 +4,7 @@ import json
 import os
 
 import httpx
+from agent_service.app.config import get_settings
 
 BASE_URL = os.getenv("GLOBALCARE_BASE_URL", "http://127.0.0.1:8000")
 HEADERS = {"X-Demo-Token": "globalcare-demo-token", "X-Request-Id": "http-e2e-smoke"}
@@ -22,7 +23,9 @@ def parse_sse(payload: str) -> list[tuple[str, dict]]:
 
 
 def run() -> None:
+    settings = get_settings()
     with httpx.Client(timeout=20) as client:
+        client.get(f"{BASE_URL}/").raise_for_status()
         client.get(f"{BASE_URL}/healthz").raise_for_status()
         created = client.post(f"{BASE_URL}/api/v1/conversations", headers=HEADERS,
                               json={"goodsid": "65539", "sales_channel": "MALL", "language": "zh-CN"})
@@ -42,7 +45,7 @@ def run() -> None:
         assert (evidence["market"], evidence["goodsid"], evidence["sales_channel"]) == ("CN", "65539", "MALL")
         assert policy[-1][1]["action_links"] == []
         entry = ask("我要申请维修", "entry")
-        expected = os.getenv("GLOBALCARE_AFTERSALES_URL", "")
+        expected = settings.aftersales_url
         assert entry[-1][1]["action_links"] == ([{"service_type": "aftersales", "label": "售后申请入口", "url": expected}] if expected else [])
         replay = ask("我要申请维修", "entry")
         assert entry[-1][1]["action_links"] == replay[-1][1]["action_links"]

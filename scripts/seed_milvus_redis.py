@@ -8,7 +8,6 @@
 
 import json
 import sys
-from pathlib import Path
 
 from agent_service.app.config import get_settings
 from agent_service.app.faq_catalog import KEY_PREFIX, META_KEY, build_bundle, redis_payload
@@ -19,9 +18,6 @@ from agent_service.app.knowledge_base import (
     build_embeddings,
     embedding_signature,
 )
-
-POLICY_DIR = Path(__file__).resolve().parents[1] / "agent_service" / "data" / "policies"
-
 
 def _create_collection(client, name: str, dimensions: int, faq: bool) -> None:
     from pymilvus import DataType, MilvusClient
@@ -46,7 +42,7 @@ def _create_collection(client, name: str, dimensions: int, faq: bool) -> None:
 
 def main() -> int:
     settings = get_settings()
-    bundle = build_bundle(DEFAULT_CATALOG, POLICY_DIR, strict=True)
+    bundle = build_bundle(DEFAULT_CATALOG, settings.policy_dir, strict=True)
     if settings.embedding_mode != "huggingface":
         print("WARNING: 当前 embedding_mode=hash，没有语义能力，仅用于联调。", file=sys.stderr)
     embeddings = build_embeddings(settings.embedding_mode, settings.embedding_model,

@@ -1,25 +1,44 @@
 # GlobalCare 商品与售后咨询 Agent
 
-基于 FastAPI、LangGraph 和 LangChain 的网页客服。当前仅服务中国大陆，内部 `market=CN`；提供保修政策、故障排查和已配置的官网商城/售后入口。用户在官方页面自行办理。
+网页客服通过四层路由处理保修、故障排查和官方办理入口。仅服务中国大陆，market 固定 CN；政策按三级品类 goodsid 和 sales_channel 匹配。
 
-> 核对日期：2026-10-15。以当前工作区源码为准，包含尚未提交的四层路由改动；测试范围见[测试说明与报告](测试说明与报告.md)。
+## 当前运行
 
-## 当前能力
+打开 **http://127.0.0.1:18000/**。FastAPI 同源提供网页和 API，JWT HttpOnly Cookie 用于会话鉴权。8000 的既有 Attu 服务保留。
 
-- 六节点图：`classify_intent`、`collect_info`、`retrieve_policy`、`resolve_link`、`unknown`、`render_response`。
-- 四层路由：L0 确定性规则 → L1 FAQ 精确匹配 → L2 意图与 FAQ 检索 → L3 模型分类/UNKNOWN 固定话术。
-- `KnowledgeStore`：Milvus 检索意图语料和 FAQ 问法，Redis 保存精确匹配、版本指针和答案变体；memory 模式使用同源目录在进程内模拟。
-- 消息级引用、`action_links`、SSE 输出；JWT/本地凭证、会话归属、消息幂等、会话锁和审计。
-- 内存或 PostgreSQL 会话存储、内存或 PostgreSQL checkpoint，分别配置。
-- 独立只读 MCP/业务网关保留；当前聊天图不查询个人订单、设备或实时维修状态。维修进度问题提供售后页面入口。
+本轮实际启用：
 
-当前没有草稿创建或查询接口、业务写入、生成式答案、混合召回、独立重排或父块回查。政策资料仍是模拟样例，正式政策和官方入口需业务提供。
+- MiniMax-M3，temperature 0.1，thinking disabled，输出上限 512 token。
+- HuggingFace BGE-M3 dense 1024 维，CPU。
+- Milvus 两个 collection：intent_corpus、faq_question，Top 10、COSINE。
+- Redis 精确匹配、版本指针、答案变体。
+- PostgreSQL 会话、消息、审计、消息幂等结果及 LangGraph checkpoint。
+- 模型和知识依赖禁止静默降级。
 
-## 政策适用条件
+私密运行值存于被 Git 忽略的 .env，不提交密钥或 JWT。当前票据由本地运行入口提供，不代表已经接入公司登录系统。
 
-国家固定 CN；政策条件是 `goodsid`（三级品类）和 `sales_channel`。型号、SKU、地区和日期不参与政策过滤。
+从仓库根目录启动：
 
-| goodsid | 三级品类 |
+```bash
+PYTHONPATH=. HF_HUB_OFFLINE=1 HF_HUB_CACHE='/Volumes/SSD-工作/models/caches/hf-cache/hub' /opt/anaconda3/envs/ai-base/bin/python -m uvicorn agent_service.app.main:app --host 127.0.0.1 --port 18000
+```
+
+需先提供 .env 中的模型密钥、公钥/issuer/audience 和有效网页 JWT。该命令复用已初始化的真实服务，不重建知识索引。当前网页使用同源接入，无需单独启动 4173 静态服务。
+
+## 业务流程
+
+六节点：classify_intent、collect_info、retrieve_policy、resolve_link、unknown、render_response。
+
+- L0：明确 SOP、否定办理、问候与能力介绍，以及不支持范围判断。
+- L1：归一化问句 SHA-256 精确匹配，得到 intent/group/item。
+- L2：意图检索聚合、FAQ 组内检索、阈值和分差检查。
+- L3：真实模型分类，继续知识、入口或固定能力回应。
+
+FAQ 缺条件时追问，纯条件补充沿用原问题，完整新诉求重新路由；候选接近时给用户选择。页面同步后端最新品类和渠道。
+
+当前目录覆盖 5 品类、3 渠道，10 FAQ、82 条意图语料、64 条 FAQ 问法、63 个精确索引和 102 个答案变体。资料仍保留项目来源与 simulated 标记，正式品牌审批未完成，不通过改标签声称生产政策。
+
+| goodsid | 品类 |
 | --- | --- |
 | 65539 | 手机 |
 | 65540 | 电脑 |
@@ -27,83 +46,31 @@
 | 65542 | 冰箱 |
 | 65543 | 洗衣机 |
 
-渠道：`MALL` 商城、`DIRECT` 自营店、`AUTHORIZED` 授权店。当前只有手机三渠道样例；编码存在不代表已有对应政策。
+渠道为 MALL、DIRECT、AUTHORIZED。当前不按 SKU、型号、地区或日期选政策，不查个人订单或实时维修状态，不执行业务写入。购买/售后/进度返回配置的官方页面，由用户自行办理。
 
-网页默认提交手机和商城；API 缺少品类、渠道时仍会追问。系统自动获取可信订单上下文是后续设计。接口显式传入非 CN 国家会被拒绝；历史非大陆会话需新建，历史记录不会被重标为 CN。
-
-## 离线启动
-
-从仓库根目录执行，显式覆盖可能遗留的配置：
+## 验证与复现
 
 ```bash
-export GLOBALCARE_ENVIRONMENT=local
-export GLOBALCARE_AUTH_MODE=demo
-export GLOBALCARE_LLM_MODE=mock
-export GLOBALCARE_EMBEDDING_MODE=hash
-export GLOBALCARE_EMBEDDING_MODEL=BAAI/bge-m3
-export GLOBALCARE_EMBEDDING_DIMENSIONS=1024
-export GLOBALCARE_POLICY_BACKEND=memory
-export GLOBALCARE_POLICY_ALLOW_FALLBACK=true
-export GLOBALCARE_PERSISTENCE_MODE=memory
-export GLOBALCARE_CHECKPOINTER_MODE=memory
-PYTHONPATH=. /opt/anaconda3/envs/ai-base/bin/python -m uvicorn agent_service.app.main:app --host 127.0.0.1 --port 8000
+PYTHONPATH=. /opt/anaconda3/envs/ai-base/bin/python scripts/live_e2e_loop.py --rounds 3 --output-dir docs/review/20261015-runtime/handoff
+PYTHONPATH=. GLOBALCARE_BASE_URL=http://127.0.0.1:18000 /opt/anaconda3/envs/ai-base/bin/python scripts/http_e2e_smoke.py
 ```
 
-在另一个终端启动网页：
+本轮最终 HTTP 3×49=147 次通过；全量 Python 113 项通过；实际服务重启历史与幂等重放通过。命令、环境边界与场景记录见[运行记录](docs/review/20261015-runtime/README.md)和[测试说明](测试说明与报告.md)。本轮不把这些结果当作全部问法、正式知识或生产环境验收。
 
-```bash
-(cd frontend && python3 -m http.server 4173 --bind 127.0.0.1)
-```
+## 初始化边界
 
-配置 `GLOBALCARE_PURCHASE_URL`、`GLOBALCARE_AFTERSALES_URL` 为业务确认的 HTTPS 地址；为空时说明入口不可用，不猜测 URL。
+PostgreSQL 宿主机 55432，Redis 回环 56379，Milvus 独立 19530、database ai_customer_service。
 
-`.env.example` 仍含旧 Embedding 模型、256 维和旧向量库说明，不能直接作为当前 Milvus 配置使用。真实密钥只放环境变量，不提交 `.env`。
+`scripts/init_postgres.py` 执行全部迁移，005 会删除旧模拟政策表。`scripts/seed_milvus_redis.py` 重建两个 collection 并清空重写 gc:faq:*；建库与查询必须同模型、同维度。初始化会写入存储，应确认目标并先备份。本轮已备份后执行知识初始化，未重启其他 Docker 服务。
 
-## Milvus、Redis 与 PostgreSQL
+compose 仍使用带 vector 扩展的 PostgreSQL 镜像，但当前应用不走该知识检索路径。历史引用兼容字段保留。
 
-项目 compose 管理 PostgreSQL（宿主机 55432）和 Redis（56379）；Milvus 需单独运行，默认地址 19530，database 为 `ai_customer_service`。
+## 文档与答辩
 
-在停用相关演示写入、确认目标实例后执行：
-
-```bash
-docker compose up -d
-export GLOBALCARE_DATABASE_URL='postgresql+psycopg://postgres:postgres@127.0.0.1:55432/globalcare_agent'
-export GLOBALCARE_REDIS_URL='redis://127.0.0.1:56379/0'
-export GLOBALCARE_MILVUS_URI='http://127.0.0.1:19530'
-export GLOBALCARE_MILVUS_DB=ai_customer_service
-export GLOBALCARE_EMBEDDING_MODE=huggingface
-export GLOBALCARE_EMBEDDING_MODEL=BAAI/bge-m3
-export GLOBALCARE_EMBEDDING_DIMENSIONS=1024
-PYTHONPATH=. /opt/anaconda3/envs/ai-base/bin/python scripts/init_postgres.py
-PYTHONPATH=. /opt/anaconda3/envs/ai-base/bin/python scripts/seed_milvus_redis.py
-export GLOBALCARE_POLICY_BACKEND=milvus
-export GLOBALCARE_POLICY_ALLOW_FALLBACK=false
-export GLOBALCARE_PERSISTENCE_MODE=postgres
-export GLOBALCARE_CHECKPOINTER_MODE=postgres
-```
-
-之后按前述命令重启 FastAPI。语义 Embedding 初始化固定使用 CPU；需具备相关依赖和模型文件。建库与运行时的模型、模式和维度必须一致。
-
-`init_postgres.py` 执行全部 SQL 迁移，其中 `005_drop_policy_documents.sql` 会删除旧模拟政策表。seed 会重建 `intent_corpus`、`faq_question`，并清空重写 Redis 的 `gc:faq:*`。这些是有写入的初始化操作，本次文档同步未执行。
-
-PostgreSQL 镜像仍带 vector 扩展，初始化 SQL 也仍创建该扩展；当前应用不使用它检索知识。这不表示已替换容器镜像或移除全部历史兼容字段。
-
-## 验证
-
-无需数据库的测试：
-
-```bash
-PYTHONPATH=. /opt/anaconda3/envs/ai-base/bin/python -m pytest -q agent_service/tests --ignore=agent_service/tests/test_postgres_conversations.py --ignore=agent_service/tests/test_fault_recovery.py
-```
-
-全量 Python 测试中的会话恢复/故障恢复模块需要独立 PostgreSQL 测试库；详细命令与本轮结果见[测试说明与报告](测试说明与报告.md)。
-
-运行中的 FastAPI 可用 `scripts/http_e2e_smoke.py` 验证政策、入口、SSE、幂等和审计；当前客服 E2E 不需要启动 MCP 或 Java 服务。本轮未执行该 HTTP E2E。当前工作区没有 `domain_service/`，不能直接执行历史 Maven 启动和测试命令。
-
-## 文档
-
+- [技术方案](技术方案.md)
 - [当前业务流程](当前项目业务逻辑-从用户输入到回复.md)
-- [当前技术方案](技术方案.md)
-- [测试说明与报告](测试说明与报告.md)
-- [后续完整 RAG 设计](docs/design/ecommerce-rag-20261013/技术方案-详细实现版.md)
-- [图示说明与历史资产边界](diagram/current-agent-flow说明.md)
+- [当前架构图](diagram/current-runtime-20261015/architecture.html)
+- [飞书方案](https://mia5mm2sp4l.feishu.cn/docx/ScqydKIMWoXVtFxwMQGcNHZPn2e)
+- 答辩材料：答辩材料/2026-10-15/交付-真实链路，含 16 页 PPT 和逐页讲稿。
+
+运营后台、独立知识 database、不可变发布快照与统一版本指针是后续配套设计，当前不宣称已实现。

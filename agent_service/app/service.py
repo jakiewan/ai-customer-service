@@ -30,7 +30,7 @@ NODE_LABELS = {
     "collect_info": "收集必要信息",
     "retrieve_policy": "匹配 FAQ 并审查适用性",
     "resolve_link": "选择官方入口",
-    "unknown": "无法识别，返回兜底话术",
+    "unknown": "组织对话回复",
     "render_response": "生成客服回复",
 }
 
@@ -229,7 +229,18 @@ class ConversationService:
                     token,
                     trace_id,
                     "GRAPH_NODE_COMPLETED",
-                    {"node": node_name, "phase": str(phase)},
+                    {
+                        "node": node_name, "phase": str(phase),
+                        **(
+                            {key: current_state.get(key) for key in (
+                                "route_layer", "intent", "faq_item_id", "route_score",
+                                "classification_source", "goodsid", "sales_channel",
+                                "resolved_question", "product_model", "reference_candidates",
+                                "reference_source", "reference_history_turns",
+                            )}
+                            if node_name in {"classify_intent", "unknown"} else {}
+                        ),
+                    },
                 )
                 yield {
                     "event": "status",
@@ -267,6 +278,9 @@ class ConversationService:
                                 "policy_id": evidence.get("policy_id"),
                                 "market": evidence.get("market"),
                                 "version": evidence.get("version"),
+                                "faq_item_id": evidence.get("faq_item_id"),
+                                "retrieval_backend": evidence.get("retrieval_backend"),
+                                "degraded": evidence.get("degraded"),
                             },
                         )
                         yield {"event": "policy_evidence", "data": evidence}
@@ -325,6 +339,10 @@ class ConversationService:
                 "conversation_status", ConversationStatus.AI_ACTIVE.value
             ),
             "human_required": bool(final_state.get("human_required")),
+            "goodsid": final_state.get("goodsid"),
+            "sales_channel": final_state.get("sales_channel"),
+            "route_layer": final_state.get("route_layer"),
+            "classification_source": final_state.get("classification_source"),
             "trace_id": trace_id,
         }
         await self.store.save_agent_result(
@@ -353,6 +371,10 @@ class ConversationService:
                 "trace_id": trace_id,
                 "action_links": result["action_links"],
                 "result_type": result["result_type"],
+                "goodsid": result["goodsid"],
+                "sales_channel": result["sales_channel"],
+                "route_layer": result["route_layer"],
+                "classification_source": result["classification_source"],
             },
         }
 
@@ -379,6 +401,10 @@ class ConversationService:
                 "trace_id": trace_id,
                 "action_links": result.get("action_links", []),
                 "result_type": result.get("result_type", "ANSWER"),
+                "goodsid": result.get("goodsid"),
+                "sales_channel": result.get("sales_channel"),
+                "route_layer": result.get("route_layer"),
+                "classification_source": result.get("classification_source"),
             },
         }
 

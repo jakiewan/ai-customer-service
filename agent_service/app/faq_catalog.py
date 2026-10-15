@@ -49,7 +49,10 @@ def normalize_question(text: str) -> str:
     """精确匹配归一化：小写、去标点空白，并去掉品类/渠道词（它们是适用维度，不是问题身份）。"""
 
     normalized = text.lower()
-    for term in (*CATEGORY_NAMES.values(), *SALES_CHANNEL_NAMES.values(), *_FILLERS):
+    for term in (
+        *CATEGORY_NAMES.values(), "笔记本", "laptop", "computer",
+        *SALES_CHANNEL_NAMES.values(), *_FILLERS,
+    ):
         normalized = normalized.replace(term, "")
     return _PUNCT.sub("", normalized)
 

@@ -142,48 +142,16 @@
     .topbar-title h1 { margin: 0; font-size: 17px; letter-spacing: -0.2px; }
     .topbar-title p { margin: 5px 0 0; color: var(--muted); font-size: 11px; }
 
-    .topbar-actions { display: flex; align-items: center; gap: 10px; }
-    .select-wrap { position: relative; }
-    .select-wrap select {
-      appearance: none;
-      min-width: 132px;
-      padding: 9px 30px 9px 12px;
-      color: #40516d;
-      border: 1px solid var(--line);
-      border-radius: 9px;
-      outline: 0;
-      background: #fff;
-      font-size: 12px;
-    }
-    .select-wrap::after {
-      content: "⌄";
-      position: absolute;
-      top: 7px;
-      right: 11px;
-      color: var(--muted);
-      pointer-events: none;
-    }
-
-    .channel-button {
-      padding: 9px 13px;
-      color: #49617f;
-      border: 1px solid #dce5f2;
-      border-radius: 9px;
-      background: #fff;
-      font-size: 12px;
-    }
-    .channel-button:hover { border-color: #a8c2f4; color: var(--primary); }
-
     .content {
       flex: 1;
       min-height: 0;
       display: grid;
-      grid-template-columns: minmax(0, 1fr) 330px;
+      grid-template-columns: minmax(0, 1fr);
       gap: 18px;
       padding: 22px;
     }
 
-    .chat-card, .insight-card {
+    .chat-card {
       border: 1px solid var(--line);
       border-radius: 17px;
       background: var(--surface);
@@ -385,63 +353,9 @@
     .send-button:disabled { cursor: not-allowed; opacity: .45; }
     .composer-tip { margin: 8px 2px 0; color: #a2afc0; font-size: 10px; }
 
-    .insights { min-width: 0; display: flex; flex-direction: column; gap: 14px; overflow-y: auto; }
-    .insight-card { padding: 17px; }
-    .card-title {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      margin-bottom: 14px;
-      color: #263750;
-      font-size: 12px;
-      font-weight: 700;
-    }
-    .card-title span { color: #a2afc0; font-size: 10px; font-weight: 500; }
-
-    .trace-list { display: flex; flex-direction: column; gap: 12px; }
-    .trace-item { display: flex; gap: 10px; }
-    .trace-dot {
-      width: 18px;
-      height: 18px;
-      flex: 0 0 18px;
-      margin-top: 1px;
-      display: grid;
-      place-items: center;
-      color: #9aabc2;
-      border: 1px solid #d9e2ee;
-      border-radius: 50%;
-      background: #fff;
-      font-size: 9px;
-    }
-    .trace-item.done .trace-dot { color: var(--success); border-color: #91ddc5; background: var(--success-soft); }
-    .trace-item.active .trace-dot { color: var(--primary); border-color: #8fb1f6; background: var(--primary-soft); box-shadow: 0 0 0 4px rgba(36,107,254,.08); }
-    .trace-copy strong { display: block; color: #53647e; font-size: 11px; font-weight: 600; }
-    .trace-copy small { display: block; margin-top: 3px; color: #a0adbe; font-size: 10px; }
-
-    .policy-card {
-      padding: 12px;
-      border: 1px solid #dce7fa;
-      border-radius: 10px;
-      background: #f7faff;
-    }
-    .policy-card strong { display: block; color: #355d9d; font-size: 11px; }
-    .policy-card p { margin: 6px 0; color: #6f809b; font-size: 10px; line-height: 1.6; }
-    .policy-meta { display: flex; flex-wrap: wrap; gap: 6px; justify-content: space-between; color: #9baecc; font-size: 9px; }
-
     .action-links { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 10px; }
     .action-links a { color: #007c86; text-decoration: underline; }
 
-
-    .notice {
-      padding: 11px 12px;
-      color: #72829c;
-      border: 1px dashed #d8e1ee;
-      border-radius: 10px;
-      background: #fbfcfe;
-      font-size: 10px;
-      line-height: 1.6;
-    }
-    .notice b { color: #526783; }
 
     @media (max-width: 1050px) {
       .app-shell { grid-template-columns: 82px minmax(0, 1fr); }
@@ -450,19 +364,14 @@
       .brand-copy, .nav-label, .nav-item span, .sidebar-bottom { display: none; }
       .nav-item { justify-content: center; padding: 13px 8px; }
       .nav-icon { width: auto; font-size: 17px; }
-      .content { grid-template-columns: minmax(0, 1fr) 280px; }
     }
 
     @media (max-width: 780px) {
       .app-shell { width: 100%; min-height: 100vh; margin: 0; border: 0; border-radius: 0; grid-template-columns: 1fr; }
       .sidebar { display: none; }
       .topbar { height: auto; align-items: flex-start; flex-direction: column; padding: 18px; }
-      .topbar-actions { width: 100%; }
-      .select-wrap, .select-wrap select { flex: 1; width: 100%; }
-      .channel-button { flex: 1; }
       .content { display: block; padding: 12px; }
       .chat-card { min-height: calc(100vh - 126px); }
-      .insights { display: none; }
       .messages { padding: 18px 14px; }
       .message-body { max-width: 88%; }
     }
@@ -481,13 +390,11 @@
         </div>
 
         <div class="nav-label">WORKSPACE</div>
-        <button class="nav-item active"><span class="nav-icon">◈</span><span>AI 智能客服</span></button>
-        <button class="nav-item"><span class="nav-icon">⌁</span><span>知识检索</span></button>
-        <button class="nav-item"><span class="nav-icon">◌</span><span>运行轨迹</span></button>
+        <a class="nav-item active" href="#chat-panel" style="text-decoration:none"><span class="nav-icon">◈</span><span>AI 智能客服</span></a>
 
         <div class="sidebar-bottom">
           <small>当前运行环境</small>
-          <p>脱敏模拟业务数据<br />Agent API · local</p>
+          <p>商品与售后知识服务<br />GlobalCare</p>
         </div>
       </aside>
 
@@ -497,38 +404,23 @@
             <h1>售后智能客服</h1>
             <p>知识咨询与官方自助办理入口</p>
           </div>
-          <div class="topbar-actions">
-            <div class="select-wrap">
-              <select v-model="goodsid" aria-label="三级品类">
-                <option value="65539">手机 · 65539</option><option value="65540">电脑 · 65540</option>
-                <option value="65541">空调 · 65541</option><option value="65542">冰箱 · 65542</option>
-                <option value="65543">洗衣机 · 65543</option>
-              </select>
-            </div>
-            <div class="select-wrap">
-              <select v-model="salesChannel" aria-label="销售渠道">
-                <option value="MALL">商城</option><option value="DIRECT">自营店</option><option value="AUTHORIZED">授权店</option>
-              </select>
-            </div>
-            <button class="channel-button" type="button">人工客服入口</button>
-          </div>
         </header>
 
         <div class="content">
-          <section class="chat-card">
+          <section class="chat-card" id="chat-panel">
             <div class="chat-heading">
               <div class="chat-heading-left">
                 <div class="agent-avatar">G</div>
                 <div>
                   <strong>GlobalCare AI Agent</strong>
-                  <small>LangGraph 咨询与入口引导</small>
+                  <small>直接描述问题，获取咨询与帮助</small>
                 </div>
               </div>
               <div class="online-pill">AI 在线</div>
             </div>
 
             <div class="messages" ref="messageList">
-              <div class="date-divider">今天 10:24</div>
+              <div class="date-divider">今天</div>
 
               <div v-for="item in messages" :key="item.id" class="message-row" :class="item.role">
                 <div v-if="item.role === 'assistant'" class="mini-avatar">G</div>
@@ -555,43 +447,10 @@
                 <textarea v-model="input" placeholder="请描述你的售后问题，例如：手机无法开机……" @keydown.enter.exact.prevent="sendMessage"></textarea>
                 <button class="send-button" type="button" :disabled="isTyping || !input.trim()" @click="sendMessage">↑</button>
               </div>
-              <div class="composer-tip">当前为本地联调：网页通过 FastAPI + SSE 调用 LangGraph Agent；业务数据为脱敏模拟数据。</div>
+              <div class="composer-tip">直接描述你的问题。涉及办理时，可通过回复中的官方入口继续操作。</div>
             </div>
           </section>
 
-          <aside class="insights">
-            <div class="insight-card">
-              <div class="card-title">Agent Trace <span>{{ currentStatus }}</span></div>
-              <div class="trace-list">
-                <div v-for="step in trace" :key="step.key" class="trace-item" :class="step.state">
-                  <div class="trace-dot">{{ step.state === 'done' ? '✓' : step.state === 'active' ? '·' : '○' }}</div>
-                  <div class="trace-copy">
-                    <strong>{{ step.name }}</strong>
-                    <small>{{ step.detail }}</small>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div class="insight-card">
-              <div class="card-title">政策引用 <span>{{ policy ? policy.backend : '待检索' }}</span></div>
-              <div v-if="policy" class="policy-card">
-                <strong>{{ policy.title }}</strong>
-                <p>{{ policy.excerpt }}</p>
-                <div class="policy-meta"><span>中国大陆政策</span><span>品类：{{ policy.goodsid }}</span><span>渠道：{{ policy.sales_channel }}</span><span>版本：{{ policy.version }}</span></div>
-              </div>
-              <div v-else class="notice">当前问题尚未触发政策检索。</div>
-            </div>
-
-            <div class="insight-card">
-              <div class="card-title">官方入口 <span>{{ actions.length ? '可前往办理' : '待选择' }}</span></div>
-              <div class="action-links" v-if="actions.length">
-                <a v-for="link in actions" :key="link.service_type" :href="link.url" target="_blank" rel="noopener noreferrer">{{ link.label }}</a>
-              </div>
-              <div v-else class="notice">明确购买或申请诉求时提供已配置的官方入口。</div>
-            </div>
-            <div class="notice">当前提供中国大陆政策咨询。购买与售后申请由你在官方页面完成。</div>
-          </aside>
         </div>
       </main>
     </div>
@@ -603,21 +462,20 @@
     createApp({
       setup() {
         const input = ref("");
-        const goodsid = ref("65539");
-        const salesChannel = ref("MALL");
         const isTyping = ref(false);
-        const currentStatus = ref("AI_ACTIVE");
         const messageList = ref(null);
-        // 本地联调允许选择回环服务端口；不把 Demo 凭证发送到任意外部地址。
-        let apiBaseUrl = "http://127.0.0.1:8000";
+        // 旧静态入口跳转到 API 同源页面，统一取得并发送 HttpOnly 身份凭证。
+        let apiBaseUrl = location.origin;
         const localApi = new URLSearchParams(location.search).get("api");
         if (localApi) {
           try {
             const parsed = new URL(localApi);
-            if (["127.0.0.1", "localhost"].includes(parsed.hostname) && parsed.protocol === "http:") apiBaseUrl = parsed.origin;
+            if (["127.0.0.1", "localhost"].includes(parsed.hostname) && parsed.protocol === "http:") {
+              apiBaseUrl = parsed.origin;
+              if (parsed.origin !== location.origin) location.replace(parsed.origin + "/" + location.hash);
+            }
           } catch (_error) { /* 无效地址继续使用默认本地服务。 */ }
         }
-        const demoToken = "globalcare-demo-token";
         const conversationId = ref(null);
         const quickPrompts = [
           "手机无法开机怎么办？",
@@ -630,16 +488,12 @@
             id: 1,
             role: "assistant",
             time: "现在",
-            content: "你好，我是 GlobalCare 售后智能客服。你可以咨询故障排查、保修政策或维修进度。需要购买或申请售后时，我会提供已配置的官方入口。"
+            content: "您好, 我是智能客服小 T"
           }
         ]);
 
-        const trace = ref([
-          { key: "active", name: "AI_ACTIVE", detail: "等待用户输入", state: "active" }
-        ]);
 
         const policy = ref(null);
-        const actions = ref([]);
 
         function nowTime() {
           return new Date().toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" });
@@ -656,9 +510,6 @@
           sendMessage();
         }
 
-        function finishTrace() {
-          trace.value = trace.value.map((step) => Object.assign({}, step, { state: "done" }));
-        }
 
         function pushAssistant(content) {
           messages.value.push({
@@ -670,27 +521,14 @@
           scrollToBottom();
         }
 
-        function updateTraceFromApi(data) {
-          const phase = data.phase || data.node || "AI_ACTIVE";
-          const detail = data.message || "Agent 正在处理";
-          const existingIndex = trace.value.findIndex((item) => item.name === phase);
-          trace.value = trace.value.map((item) => Object.assign({}, item, {
-            state: item.state === "active" ? "done" : item.state
-          }));
-          if (existingIndex >= 0) {
-            trace.value[existingIndex] = Object.assign({}, trace.value[existingIndex], { detail, state: "active" });
-          } else {
-            trace.value.push({ key: "api-" + phase + "-" + Date.now(), name: phase, detail, state: "active" });
-          }
-          currentStatus.value = phase;
-        }
 
         async function ensureConversation() {
           if (conversationId.value) return conversationId.value;
           const response = await fetch(apiBaseUrl + "/api/v1/conversations", {
             method: "POST",
-            headers: { "Content-Type": "application/json", "X-Demo-Token": demoToken },
-            body: JSON.stringify({ channel: "WEB_CHAT", language: "zh-CN", goodsid: goodsid.value, sales_channel: salesChannel.value })
+            headers: { "Content-Type": "application/json" },
+            credentials: "include",
+            body: JSON.stringify({ channel: "WEB_CHAT", language: "zh-CN" })
           });
           if (!response.ok) throw new Error("无法创建 AI 客服会话");
           const payload = await response.json();
@@ -716,22 +554,19 @@
         }
 
         async function runApi(userText) {
-          trace.value = [{ key: "api-active", name: "AI_ACTIVE", detail: "正在连接 Agent 服务", state: "active" }];
           // 政策引用属于当前消息，不得把上一轮证据带到新问题。
           policy.value = null;
-          actions.value = [];
           messages.value.push({ id: Date.now() + 1, role: "assistant", time: nowTime(), typing: true });
           scrollToBottom();
           try {
             const id = await ensureConversation();
             const response = await fetch(apiBaseUrl + "/api/v1/conversations/" + id + "/messages/stream", {
               method: "POST",
-              headers: { "Content-Type": "application/json", "X-Demo-Token": demoToken },
+              headers: { "Content-Type": "application/json" },
+              credentials: "include",
               body: JSON.stringify({
                 client_message_id: "web-" + Date.now(),
                 message: userText,
-                goodsid: goodsid.value,
-                sales_channel: salesChannel.value,
                 language: "zh-CN"
               })
             });
@@ -752,24 +587,19 @@
                 if (!eventLine || !dataLine) return;
                 const eventName = eventLine.replace("event: ", "");
                 const data = JSON.parse(dataLine.replace("data: ", ""));
-                if (eventName === "status") updateTraceFromApi(data);
                 if (eventName === "policy_evidence") {
-                  policy.value = { title: data.title, version: data.version, excerpt: data.excerpt, market: data.market, goodsid: data.goodsid, sales_channel: data.sales_channel, backend: data.retrieval_backend || '政策证据' };
+                  policy.value = data;
                 }
                 if (eventName === "token") appendToken(data.delta || "");
                 if (eventName === "error") {
                   const typingIndex = messages.value.findIndex((item) => item.typing);
                   if (typingIndex >= 0) messages.value.splice(typingIndex, 1);
                   pushAssistant((data.message || "Agent 暂时无法处理") + (data.trace_id ? "\n请求追踪号：" + data.trace_id : ""));
-                  currentStatus.value = "FAILED";
                 }
                 if (eventName === "done") {
                   receivedDone = true;
-                  actions.value = data.action_links || [];
                   const last = messages.value[messages.value.length - 1];
-                  if (last && last.role === "assistant") last.action_links = actions.value;
-                  currentStatus.value = data.status || currentStatus.value;
-                  finishTrace();
+                  if (last && last.role === "assistant") last.action_links = data.action_links || [];
                 }
               });
             }
@@ -778,7 +608,6 @@
             const typingIndex = messages.value.findIndex((item) => item.typing);
             if (typingIndex >= 0) messages.value.splice(typingIndex, 1);
             pushAssistant(error.message || "无法连接 Agent 服务。请确认 FastAPI 服务已启动后重试。");
-            currentStatus.value = "FAILED";
           } finally {
             isTyping.value = false;
             scrollToBottom();
@@ -797,14 +626,8 @@
         return {
           input,
           messages,
-          trace,
-          policy,
-          actions,
-          goodsid,
-          salesChannel,
           quickPrompts,
           isTyping,
-          currentStatus,
           messageList,
           usePrompt,
           sendMessage

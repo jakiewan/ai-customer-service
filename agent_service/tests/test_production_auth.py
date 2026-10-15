@@ -47,6 +47,22 @@ def test_jwt_refresh_keeps_identity_but_other_tenant_cannot_read_conversation(ke
         assert client.get(uri, headers={"X-Demo-Token": "globalcare-demo-token"}).status_code == 401
 
 
+def test_local_web_uses_httponly_jwt_cookie_and_keeps_api_protected(keys):
+    key, public_key = keys
+    access = bearer(key)["Authorization"].removeprefix("Bearer ")
+    settings = Settings(
+        _env_file=None, auth_mode="jwt", jwt_public_key=public_key,
+        jwt_issuer="https://login.example.test", jwt_audience="globalcare-agent",
+        web_access_token=access,
+    )
+    with TestClient(create_app(settings)) as client:
+        assert client.post("/api/v1/conversations", json={}).status_code == 401
+        page = client.get("/")
+        assert page.status_code == 200 and "HttpOnly" in page.headers["set-cookie"]
+        assert access not in page.text
+        assert client.post("/api/v1/conversations", json={}).status_code == 200
+
+
 @pytest.mark.parametrize("patch", [
     {"iss": "https://wrong.test"}, {"aud": "other-service"}, {"exp": 1},
     {"iat": 9999999999}, {"sub": ""}, {"tenant_id": ""}, {"customer_id": None},

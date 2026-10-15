@@ -111,6 +111,17 @@ def _contains(text: str, terms: tuple[str, ...]) -> bool:
 def classify_intent(text: str) -> Intent:
     """确定性区分知识咨询和入口诉求，保留否定语义。"""
 
+    social = re.sub(r"[\s，。！？!?,.]+", "", text.lower())
+    capabilities = re.fullmatch(
+        r"(?:请(?:用一句话)?(?:概括|介绍)|介绍一下|告诉我)?"
+        r"(?:你|您)(?:是谁|能做什么|可以做什么|(?:能|可以)提供(?:什么|哪些)(?:帮助|协助|服务))",
+        social,
+    )
+    if capabilities or social in {
+        "你好", "您好", "嗨", "hello", "hi", "谢谢", "感谢", "谢谢你",
+        "好的", "收到", "再见", "晚安", "早上好", "晚上好",
+    }:
+        return Intent.CHITCHAT
     if link_cancelled(text):
         if _contains(text, FAQ_TERMS):
             return Intent.FAQ
@@ -126,15 +137,15 @@ def classify_intent(text: str) -> Intent:
         (
             "我要买",
             "我想买",
-            "在哪买",
-            "哪里买",
             "购买链接",
-            "商城",
-            "官网商城",
+            "去官网商城购买",
             "where to buy",
             "purchase link",
             "buy now",
         ),
+    ) or (
+        _contains(text, ("在哪买", "哪里买", "商城", "官网商城"))
+        and not _contains(text, FAQ_TERMS)
     ):
         return Intent.PURCHASE_LINK
     if _contains(text, AFTERSALES_TERMS):
@@ -147,6 +158,10 @@ def classify_intent(text: str) -> Intent:
                 "条件",
                 "多久",
                 "免费",
+                "费用",
+                "收费",
+                "多少钱",
+                "价格",
                 "what documents",
                 "requirements",
             ),
@@ -191,6 +206,81 @@ def _first_match(patterns: tuple[str, ...], text: str) -> str | None:
     return None
 
 
+PRODUCT_REFERENCE = re.compile(
+    r"^(?:(?:那|那么|请问)[，,\s]*)?"
+    r"(?:它们|他们|这两款|那两款|它|他|[这那](?:款|台|部|个)(?:手机|电脑|空调|冰箱|洗衣机|设备|商品)?)"
+)
+IPHONE_MODEL = re.compile(
+    r"(?<![a-z0-9])iphone\s*(\d{1,2})(?:\s*(pro(?:\s*max)?|plus|mini|air|e))?(?![a-z0-9])",
+    re.IGNORECASE,
+)
+LABELLED_MODEL = re.compile(
+    r"(?:型号|机型|model)\s*[:：]?\s*([A-Za-z0-9][A-Za-z0-9 ._-]{1,29})",
+    re.IGNORECASE,
+)
+
+
+def product_mentions(text: str) -> list[str]:
+    """只抽取用户明确写出的商品，不把助手回答或未识别的名称当作事实。"""
+
+    models = []
+    for match in IPHONE_MODEL.finditer(text):
+        suffix = re.sub(r"\s*max", " Max", match[2].title()) if match[2] else ""
+        models.append(f"iPhone {match[1]}" + (f" {suffix}" if suffix else ""))
+    labelled = [match[1].strip(" ._-") for match in LABELLED_MODEL.finditer(text)]
+    models.extend(model for model in labelled if not IPHONE_MODEL.fullmatch(model))
+    categories = [name for name in CATEGORY_NAMES.values() if name in text]
+    if IPHONE_MODEL.search(text):
+        categories = [name for name in categories if name != "手机"]
+    return list(dict.fromkeys([*models, *categories]))
+
+
+def resolve_product_reference(
+    message: str, history: list[dict], pending_question: str | None = None
+) -> tuple[str | None, list[str]]:
+    """唯一候选补全；无候选或多个候选交由现有 collect_info 追问。"""
+
+    subjects = product_mentions(message)
+    if pending_question and len(subjects) == 1:
+        selection = re.sub(r"^(?:型号|机型|model)\s*[:：]?", "", message, flags=re.IGNORECASE)
+        selected = re.sub(r"[\s，。！？,.!?]", "", selection).lower()
+        if selected == re.sub(r"\s", "", subjects[0]).lower():
+            return PRODUCT_REFERENCE.sub(subjects[0], pending_question, count=1), []
+    reference = PRODUCT_REFERENCE.match(message)
+    if reference is None:
+        return message, []
+    if (
+        IPHONE_MODEL.match(message, reference.end())
+        or LABELLED_MODEL.match(message, reference.end())
+    ):
+        return message, []
+    category = next((name for name in CATEGORY_NAMES.values() if name in reference[0]), None)
+    for index in range(len(history) - 1, -1, -1):
+        previous = history[index]
+        text = str(previous.get("content", ""))
+        if previous.get("role") != "user":
+            continue
+        subjects = product_mentions(text)
+        if PRODUCT_REFERENCE.match(text):
+            previous_question, previous_candidates = resolve_product_reference(text, history[:index])
+            subjects = product_mentions(previous_question) if previous_question else previous_candidates
+        if subjects:
+            if category:
+                matching = [
+                    subject for subject in subjects
+                    if extract_context(subject).goodsid == extract_context(category).goodsid
+                ]
+                if not matching:
+                    return PRODUCT_REFERENCE.sub(category, message, count=1), []
+                subjects = matching
+            if len(subjects) == 1 and not reference[0].endswith(("们", "两款")):
+                return PRODUCT_REFERENCE.sub(subjects[0], message, count=1), []
+            return None, subjects
+    if category:
+        return PRODUCT_REFERENCE.sub(category, message, count=1), []
+    return None, []
+
+
 def extract_context(text: str) -> ExtractedContext:
     order_id = _first_match(
         (
@@ -206,8 +296,11 @@ def extract_context(text: str) -> ExtractedContext:
         ),
         text,
     )
-    product_model = _first_match(
-        (r"(?:型号|机型|model)\s*[:：]?\s*([A-Za-z0-9 ._-]{2,30})",), text
+    subjects = product_mentions(text)
+    product_model = (
+        subjects[0]
+        if len(subjects) == 1 and subjects[0] not in CATEGORY_NAMES.values()
+        else None
     )
 
     lowered = text.lower()
@@ -229,6 +322,10 @@ def extract_context(text: str) -> ExtractedContext:
         goodsid = next(
             (key for key, name in CATEGORY_NAMES.items() if name in text), None
         )
+    if goodsid is None and _contains(text, ("笔记本", "laptop", "computer")):
+        goodsid = "65540"
+    if goodsid is None and IPHONE_MODEL.search(text):
+        goodsid = "65539"
     sales_channel = next(
         (
             key

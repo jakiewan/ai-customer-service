@@ -32,7 +32,8 @@ class Intent(StrEnum):
     REPAIR_STATUS = "REPAIR_STATUS"
     AFTERSALES_LINK = "AFTERSALES_LINK"
     PURCHASE_LINK = "PURCHASE_LINK"
-    # 第 3 层兜底：规则、Redis、Milvus、LLM 均无法确定时，返回固定话术。
+    CHITCHAT = "CHITCHAT"
+    # 无可靠业务路由时，由模型结合上下文澄清或引导。
     UNKNOWN = "UNKNOWN"
 
 
@@ -48,6 +49,7 @@ class RouteLayer(StrEnum):
     L2_MILVUS_SEMANTIC = "L2_MILVUS_SEMANTIC"
     L3_LLM = "L3_LLM"
     L3_UNKNOWN = "L3_UNKNOWN"
+    L3_AGENT = "L3_AGENT"
 
 
 class ConversationStatus(StrEnum):

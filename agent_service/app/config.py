@@ -27,14 +27,17 @@ class Settings(BaseSettings):
     jwt_public_key: str = ""
     jwt_issuer: str = ""
     jwt_audience: str = ""
+    # 本地网页使用由运行入口提供的 JWT，Agent 仅验签，不负责签发身份。
+    web_access_token: str = Field(default="", repr=False)
     # `null` 仅为本地 file:// 打开方式提供兼容；生产环境应覆盖为明确 HTTPS 来源。
     cors_origins: str = "http://127.0.0.1:4173,http://localhost:4173,null"
 
     llm_mode: Literal["mock", "minimax"] = "mock"
     minimax_api_key: str = Field(default="", repr=False)
-    minimax_base_url: str = "https://api.minimax.chat/v1"
+    minimax_base_url: str = "https://api.minimax.cn/v1"
     minimax_model: str = "MiniMax-M3"
     llm_temperature: float = 0.1
+    llm_allow_fallback: bool = True
 
     embedding_mode: Literal["hash", "huggingface"] = "hash"
     # BGE-M3 dense 向量 1024 维；hash 离线模式同维度，便于与 Milvus schema 对齐。

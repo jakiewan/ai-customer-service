@@ -15,6 +15,10 @@ intents:
     corpus:
       - 手机坏了怎么办
       - 设备出故障了怎么处理
+      - 设备充电异常
+      - 设备发热卡顿
+      - 空调冰箱不制冷
+      - 洗衣机不排水不脱水
   - intent_id: AFTERSALES_LINK
     route_target: SOP
     corpus:
@@ -89,3 +93,64 @@ faq_items:
       - cannot power on
       - phone won't turn on
       - not charging
+  - faq_item_id: parts_warranty
+    intent_id: FAQ
+    faq_group_id: grp_policy
+    standard_question: 主要部件保修多久
+    answer_clause: 主要部件保修期
+    similar_questions:
+      - 电池保多久
+      - 电池保修多久
+      - 主要部件保修期
+      - 压缩机保修多久
+      - 主板保修多久
+  - faq_item_id: repair_fee
+    intent_id: FAQ
+    faq_group_id: grp_policy
+    standard_question: 保外维修怎么收费
+    answer_clause: 保外维修收费
+    similar_questions:
+      - 过保维修收费
+      - 保外维修收费
+      - 检测费怎么收
+      - 维修需要多少钱
+      - 申请维修要多少钱
+      - 申请维修需要多少钱
+  - faq_item_id: charging_issue
+    intent_id: TROUBLESHOOTING
+    faq_group_id: grp_troubleshoot
+    standard_question: 充电异常怎么处理
+    answer_clause: 充电异常排查
+    similar_questions:
+      - 充电异常
+      - 充电不正常
+      - 插上充电器没有反应
+  - faq_item_id: overheating
+    intent_id: TROUBLESHOOTING
+    faq_group_id: grp_troubleshoot
+    standard_question: 发热卡顿怎么处理
+    answer_clause: 发热卡顿排查
+    similar_questions:
+      - 发热卡顿
+      - 玩一会就很烫
+      - 运行很卡
+  - faq_item_id: not_cooling
+    intent_id: TROUBLESHOOTING
+    faq_group_id: grp_troubleshoot
+    standard_question: 不制冷怎么办
+    answer_clause: 不制冷排查
+    similar_questions:
+      - 不制冷
+      - 制冷效果不好
+      - 不出冷风
+      - 里面不凉
+  - faq_item_id: washer_drain
+    intent_id: TROUBLESHOOTING
+    faq_group_id: grp_troubleshoot
+    standard_question: 洗衣机不排水怎么办
+    answer_clause: 不排水不脱水排查
+    similar_questions:
+      - 不排水怎么办
+      - 不脱水怎么办
+      - 水排不出去
+      - 脱水不转

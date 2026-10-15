@@ -7,10 +7,10 @@ from pathlib import Path
 from typing import Annotated
 from uuid import UUID, uuid4
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Request
+from fastapi import Cookie, Depends, FastAPI, Header, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 
 from .auth import Principal, authenticate
 from .checkpointer import open_checkpointer, to_psycopg_dsn
@@ -101,7 +101,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     policy_dir = Path(app_settings.policy_dir)
     if not policy_dir.is_absolute():
-        policy_dir = Path(__file__).resolve().parents[1] / "data" / "policies"
+        policy_dir = Path(__file__).resolve().parents[2] / policy_dir
     policy_store = KnowledgeStore(
         policy_dir,
         backend=app_settings.policy_backend,
@@ -120,6 +120,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         base_url=app_settings.minimax_base_url,
         model_name=app_settings.minimax_model,
         temperature=app_settings.llm_temperature,
+        allow_fallback=app_settings.llm_allow_fallback,
     )
     store = (
         PostgresStore(
@@ -134,6 +135,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         "purchase_url": app_settings.purchase_url,
         "aftersales_url": app_settings.aftersales_url,
         "max_steps": app_settings.max_graph_steps,
+        "max_tool_calls": app_settings.max_tool_calls,
     }
     graph = build_graph(**graph_kwargs)
     conversation_service = ConversationService(
@@ -176,8 +178,28 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def demo_token_dependency(
         x_demo_token: Annotated[str | None, Header(alias="X-Demo-Token")] = None,
         authorization: Annotated[str | None, Header(alias="Authorization")] = None,
+        access_cookie: Annotated[str | None, Cookie(alias="globalcare_access_token")] = None,
     ) -> Principal:
-        return authenticate(app_settings, authorization, x_demo_token)
+        return authenticate(
+            app_settings,
+            authorization or (f"Bearer {access_cookie}" if access_cookie else None),
+            x_demo_token,
+        )
+
+    @app.get("/", include_in_schema=False)
+    async def web_index():
+        response = FileResponse(Path(__file__).resolve().parents[2] / "frontend" / "index.html")
+        # 仅回环开发页面接收运行入口的身份票据，生产由既有登录系统提供。
+        if (
+            app_settings.environment in {"local", "development"}
+            and app_settings.auth_mode == "jwt"
+            and app_settings.web_access_token
+        ):
+            response.set_cookie(
+                "globalcare_access_token", app_settings.web_access_token,
+                httponly=True, samesite="strict", path="/",
+            )
+        return response
 
     @app.exception_handler(RequestValidationError)
     async def validation_exception_handler(request: Request, _: RequestValidationError):
