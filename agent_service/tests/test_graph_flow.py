@@ -4,6 +4,7 @@ from fastapi.testclient import TestClient
 from agent_service.app.config import Settings
 from agent_service.app.main import create_app
 from agent_service.app.schemas import CreateConversationRequest, MessageRequest
+from agent_service.app.state import CONTEXT_HISTORY_TURNS
 
 
 def make_service(**overrides):
@@ -55,11 +56,11 @@ def test_graph_visualization_contains_all_conditional_routes():
 
 
 @pytest.mark.asyncio
-async def test_name_reference_uses_five_rounds_and_is_isolated_between_conversations(monkeypatch):
+async def test_name_reference_uses_fifty_rounds_and_is_isolated_between_conversations(monkeypatch):
     from agent_service.app.model_factory import AgentModel, ReferenceResolution
 
     async def resolve(_self, message, history):
-        assert sum(item["role"] == "user" for item in history) <= 5
+        assert sum(item["role"] == "user" for item in history) <= CONTEXT_HISTORY_TURNS
         if message == "我是谁?" and any(item["content"] == "我是万佳恒" for item in history):
             return ReferenceResolution(resolved_question="万佳恒是谁？", referent="万佳恒")
         return None
@@ -72,11 +73,11 @@ async def test_name_reference_uses_five_rounds_and_is_isolated_between_conversat
     events = await run(service, first, "我是谁?", "recall")
     assert "你刚才告诉我：我是万佳恒" in output(events)
     assert "万佳恒" not in output(await run(service, other, "我是谁?", "recall"))
-    for index in range(5):
+    for index in range(CONTEXT_HISTORY_TURNS):
         await run(service, first, "你好", f"filler-{index}")
     events = await run(service, first, "我是谁?", "expired")
     assert "万佳恒" not in output(events)
-    assert "最近5轮" in output(events)
+    assert "最近50轮" in output(events)
 
 
 @pytest.mark.asyncio
@@ -84,13 +85,13 @@ async def test_expired_product_reference_does_not_reuse_stale_state():
     service = make_service()
     conv = await conversation(service, sales_channel="MALL")
     await run(service, conv, "iPhone17在哪里买", "subject")
-    for index in range(5):
+    for index in range(CONTEXT_HISTORY_TURNS):
         await run(service, conv, "你好", f"filler-{index}")
     events = await run(service, conv, "它保修多久", "expired")
     assert events[-1]["data"]["result_type"] == "CLARIFICATION"
     record = await service.store.get_conversation(conv.conversation_id, "owner")
     assert record.state["product_model"] is None
-    assert record.state["reference_history_turns"] == 5
+    assert record.state["reference_history_turns"] == CONTEXT_HISTORY_TURNS
 
 
 @pytest.mark.asyncio

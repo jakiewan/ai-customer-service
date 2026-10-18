@@ -75,6 +75,7 @@ def test_product_reference_uses_only_user_subjects(subject, question, expected):
 @pytest.mark.parametrize("history,candidates", [
     ([], []),
     ([{"role": "assistant", "content": "iPhone 17"}], []),
+    ([{"role": "user", "content": "它保修多久"}] * 50, []),
     ([{"role": "user", "content": "iPhone17和iPhone16有什么区别"}], ["iPhone 17", "iPhone 16"]),
     ([{"role": "user", "content": "iPhone17和电脑哪个好"}], ["iPhone 17", "电脑"]),
 ])

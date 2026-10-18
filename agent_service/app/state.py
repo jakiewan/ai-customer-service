@@ -1,17 +1,25 @@
 from typing import Annotated, Any, TypedDict
 
 
+CONTEXT_HISTORY_TURNS = 50
+
+
 def bounded_messages(previous: list, added: list) -> list:
-    """只留最近十轮；完整历史仍存消息表，checkpoint 不无限膨胀。"""
-    return (previous + added)[-20:]
+    """保留当前轮及前五十轮；完整历史仍存消息表。"""
+
+    messages = previous + added
+    starts = [index for index, item in enumerate(messages) if item.get("role") == "user"]
+    if len(starts) > CONTEXT_HISTORY_TURNS + 1:
+        return messages[starts[-(CONTEXT_HISTORY_TURNS + 1)]:]
+    return messages
 
 
 def recent_dialogue(messages: list[dict]) -> list[dict]:
-    """最近五轮历史；一轮包含用户输入及随后助手回复，不按消息条数截断。"""
+    """最近五十轮历史；一轮包含用户输入及随后助手回复，不按消息条数截断。"""
 
     dialogue = [item for item in messages if item.get("role") in {"user", "assistant"}]
     starts = [index for index, item in enumerate(dialogue) if item["role"] == "user"]
-    return dialogue[starts[max(0, len(starts) - 5)]:] if starts else []
+    return dialogue[starts[max(0, len(starts) - CONTEXT_HISTORY_TURNS)]:] if starts else []
 
 
 class AfterSalesState(TypedDict, total=False):

@@ -263,6 +263,8 @@ def resolve_product_reference(
         subjects = product_mentions(text)
         if PRODUCT_REFERENCE.match(text):
             previous_question, previous_candidates = resolve_product_reference(text, history[:index])
+            if previous_question is None and not previous_candidates:
+                return None, []
             subjects = product_mentions(previous_question) if previous_question else previous_candidates
         if subjects:
             if category:

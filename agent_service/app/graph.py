@@ -28,7 +28,7 @@ from .intent import (
 from .knowledge_base import KnowledgeStore
 from .faq_catalog import normalize_question
 from .model_factory import AgentModel, KNOWLEDGE_TOOL_NAME, KnowledgeSearch
-from .state import AfterSalesState, bounded_messages, recent_dialogue
+from .state import CONTEXT_HISTORY_TURNS, AfterSalesState, bounded_messages, recent_dialogue
 
 logger = logging.getLogger(__name__)
 
@@ -191,7 +191,7 @@ def build_graph(
                         context_reply = f"你刚才告诉我：{fact[0]}。"
                         break
         if context_reply is None and identity_question:
-            context_reply = "暂时无法从最近5轮对话确认你的称呼，请再告诉我一次。"
+            context_reply = f"暂时无法从最近{CONTEXT_HISTORY_TURNS}轮对话确认你的称呼，请再告诉我一次。"
             resolved = raw_message
         message = resolved or raw_message
         explicit = extract_context(message)

@@ -13,6 +13,7 @@ import pytest
 from agent_service.app.config import Settings
 from agent_service.app.main import create_app
 from agent_service.app.schemas import CreateConversationRequest, MessageRequest
+from agent_service.app.state import CONTEXT_HISTORY_TURNS
 from agent_service.tests.test_postgres_conversations import database_url
 
 
@@ -41,12 +42,12 @@ async def test_graph_checkpoint_history_is_bounded_but_api_history_is_preserved(
     app = create_app(Settings(_env_file=None))
     service = app.state.conversation_service
     conversation = await service.create_conversation("owner", CreateConversationRequest(market="CN"))
-    for index in range(25):
+    for index in range(CONTEXT_HISTORY_TURNS + 5):
         _ = [event async for event in service.stream_message(conversation.conversation_id, "owner",
              MessageRequest(client_message_id=f"turn-{index}", message="你好"), "history-trace")]
     snapshot = await service.graph_service.graph.aget_state({"configurable": {"thread_id": str(conversation.conversation_id)}})
-    assert len(snapshot.values["messages"]) == 20
-    assert len((await service.conversation_view(conversation.conversation_id, "owner")).messages) == 50
+    assert len(snapshot.values["messages"]) == (CONTEXT_HISTORY_TURNS + 1) * 2
+    assert len((await service.conversation_view(conversation.conversation_id, "owner")).messages) == (CONTEXT_HISTORY_TURNS + 5) * 2
 
 
 @pytest.mark.asyncio

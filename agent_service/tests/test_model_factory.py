@@ -6,7 +6,7 @@ from agent_service.app.model_factory import (
     _extract_json_object,
     _normalize_intent_payload,
 )
-from agent_service.app.state import recent_dialogue
+from agent_service.app.state import CONTEXT_HISTORY_TURNS, bounded_messages, recent_dialogue
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import pytest
@@ -85,16 +85,32 @@ async def test_langchain_provider_protocol_has_output_limit_and_parses_structure
         thread.join(timeout=2)
 
 
-def test_reference_window_counts_five_user_assistant_rounds():
+def test_reference_window_counts_fifty_user_assistant_rounds():
     history = []
     assert recent_dialogue(history) == []
-    for index in range(6):
+    for index in range(CONTEXT_HISTORY_TURNS + 1):
         history.extend([
             {"role": "user", "content": f"问题{index}"},
             {"role": "assistant", "content": f"回复{index}"},
         ])
     assert recent_dialogue(history) == history[2:]
     assert recent_dialogue(history[:2]) == history[:2]
+
+
+def test_checkpoint_keeps_fifty_previous_rounds_when_current_question_is_appended():
+    history = []
+    for index in range(CONTEXT_HISTORY_TURNS):
+        history.extend([
+            {"role": "user", "content": f"问题{index}"},
+            {"role": "assistant", "content": "回复"},
+            {"role": "assistant", "content": "补充"},
+        ])
+    pending = bounded_messages(history, [{"role": "user", "content": "当前问题"}])
+    assert recent_dialogue(pending[:-1]) == history
+    completed = bounded_messages(pending, [{"role": "assistant", "content": "当前回复"}])
+    following = bounded_messages(completed, [{"role": "user", "content": "下个问题"}])
+    assert sum(item["role"] == "user" for item in following) == CONTEXT_HISTORY_TURNS + 1
+    assert recent_dialogue(following[:-1])[0]["content"] == "问题1"
 
 
 @pytest.mark.asyncio
@@ -104,7 +120,7 @@ async def test_fallback_invalid_output_or_provider_failure_is_not_a_successful_r
 
     class Chain:
         async def ainvoke(self, inputs):
-            assert len(json.loads(inputs["history"])) == 10
+            assert len(json.loads(inputs["history"])) == CONTEXT_HISTORY_TURNS * 2
             assert "旧问题" not in inputs["history"]
             if reply is None:
                 raise TimeoutError("fixture timeout")
@@ -113,7 +129,7 @@ async def test_fallback_invalid_output_or_provider_failure_is_not_a_successful_r
     model = AgentModel(mode="mock", api_key="", base_url="", model_name="", temperature=0)
     model._fallback_chain = Chain()
     history = [{"role": "user", "content": "旧问题"}, {"role": "assistant", "content": "旧回复"}]
-    for index in range(5):
+    for index in range(CONTEXT_HISTORY_TURNS):
         history.extend([{"role": "user", "content": f"问题{index}"}, {"role": "assistant", "content": f"回复{index}"}])
     with pytest.raises(RuntimeError, match="模型回复暂不可用"):
         await model.fallback_reply("当前问题", history)
@@ -145,20 +161,20 @@ async def test_agent_rejects_unauthorized_tools_invalid_arguments_and_multiple_c
 
 
 @pytest.mark.asyncio
-async def test_agent_can_reply_without_search_and_receives_only_five_history_rounds():
+async def test_agent_can_reply_without_search_and_receives_only_fifty_history_rounds():
     from langchain_core.messages import AIMessage
 
     class Chain:
         async def ainvoke(self, inputs):
             history = json.loads(inputs["history"])
-            assert len(history) == 10 and history[0]["content"] == "问题1"
+            assert len(history) == CONTEXT_HISTORY_TURNS * 2 and history[0]["content"] == "问题1"
             assert inputs["mode"] == "UNKNOWN"
             return AIMessage(content="你想具体了解哪方面？")
 
     model = AgentModel(mode="mock", api_key="", base_url="", model_name="", temperature=0)
     model._agent_chain = Chain()
     history = []
-    for index in range(6):
+    for index in range(CONTEXT_HISTORY_TURNS + 1):
         history.extend([{"role": "user", "content": f"问题{index}"}, {"role": "assistant", "content": "回复"}])
     assert await model.agent_reply("继续聊聊", history, goodsid=None, sales_channel=None) == "你想具体了解哪方面？"
 
@@ -180,7 +196,7 @@ async def test_reference_model_sees_both_roles_and_rejects_out_of_window_entity(
     model = AgentModel(mode="mock", api_key="", base_url="", model_name="", temperature=0)
     model._reference_chain = Chain()
     history = [{"role": "user", "content": "iPhone16"}, {"role": "assistant", "content": "旧商品"}]
-    for index in range(5):
+    for index in range(CONTEXT_HISTORY_TURNS):
         history.extend([
             {"role": "user", "content": f"问题{index}"},
             {"role": "assistant", "content": "可以看看iPhone17" if index == 4 else "请继续"},
@@ -189,7 +205,7 @@ async def test_reference_model_sees_both_roles_and_rejects_out_of_window_entity(
     assert (result is not None) is valid
     supplied = json.loads(requests[0]["history"])
     assert supplied == history[2:]
-    assert len(supplied) == 10
+    assert len(supplied) == CONTEXT_HISTORY_TURNS * 2
     assert "iPhone16" not in requests[0]["history"]
     if valid:
         assert await model.resolve_reference("这款iPhone16保修多久", history) is None
