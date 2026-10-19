@@ -105,3 +105,4 @@ experience/*.docx
 /scripts/**
 /diagram/**
 docs/**
+**.jsonl

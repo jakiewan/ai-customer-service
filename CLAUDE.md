@@ -2,7 +2,7 @@
 
 本文件说明当前工作区的开发与核对规则。用户偏好中文；技术术语和代码标识符保留英文。
 
-> 核对日期：2026-10-15。当前行为以源码为准；完整说明见[技术方案](技术方案.md)和[当前业务流程](当前项目业务逻辑-从用户输入到回复.md)。当前工作区包含未提交代码，不能只按 HEAD 判断实现。
+> 核对日期：2026-10-18（核对时 HEAD `1b03026`，工作区干净）。当前行为以源码为准；完整说明见[技术方案](技术方案.md)和[当前业务流程](当前项目业务逻辑-从用户输入到回复.md)。历史文档和图示可能滞后，不能替代源码核对。
 
 ## 当前业务契约
 
@@ -87,17 +87,29 @@ Vue → FastAPI → ConversationService → LangGraph
 
 ## 运行与验证
 
-离线启动、真实知识后端初始化命令见[README](README.md)，验证记录见[测试说明与报告](测试说明与报告.md)。
+离线启动、真实知识后端初始化命令见[README](README.md)，验证记录见[测试说明与报告](测试说明与报告.md)。私密 `.env` 会覆盖代码默认值，因此离线测试必须显式覆盖为 mock/hash/memory，否则导入应用时会尝试连接真实 Milvus/PostgreSQL。
 
 ```bash
-PYTHONPATH=. /opt/anaconda3/envs/ai-base/bin/python -m uvicorn agent_service.app.main:app --host 127.0.0.1 --port 8000
-(cd frontend && python3 -m http.server 4173 --bind 127.0.0.1)
-PYTHONPATH=. /opt/anaconda3/envs/ai-base/bin/python -m pytest -q agent_service/tests --ignore=agent_service/tests/test_postgres_conversations.py --ignore=agent_service/tests/test_fault_recovery.py
+# 离线测试（排除两个需要独立测试库的模块）
+NO_PROXY='localhost,127.0.0.1,::1' no_proxy='localhost,127.0.0.1,::1' \
+PYTHONPATH=. \
+GLOBALCARE_AUTH_MODE=demo GLOBALCARE_LLM_MODE=mock GLOBALCARE_LLM_ALLOW_FALLBACK=true \
+GLOBALCARE_EMBEDDING_MODE=hash GLOBALCARE_POLICY_BACKEND=memory GLOBALCARE_POLICY_ALLOW_FALLBACK=true \
+GLOBALCARE_PERSISTENCE_MODE=memory GLOBALCARE_CHECKPOINTER_MODE=memory \
+GLOBALCARE_PURCHASE_URL='' GLOBALCARE_AFTERSALES_URL='' \
+/opt/anaconda3/envs/ai-base/bin/python -m pytest -q agent_service/tests \
+  --ignore=agent_service/tests/test_postgres_conversations.py \
+  --ignore=agent_service/tests/test_fault_recovery.py
+
+# 本地真实入口（需 .env 提供 JWT、模型、Milvus/Redis 与 PostgreSQL 配置）
+PYTHONPATH=. /opt/anaconda3/envs/ai-base/bin/python -m uvicorn agent_service.app.main:app --host 127.0.0.1 --port 18000
+
+# 静态检查
 /opt/anaconda3/envs/ai-base/bin/python -m compileall -q agent_service
 git diff --check
 ```
 
-全量 pytest 中两个数据库相关模块需要独立测试库，会执行 SQL 迁移，不能指向业务库。无需为文档同步执行数据库初始化或 seed。
+全量 pytest 中两个数据库相关模块需要独立测试库，会执行 SQL 迁移，不能指向业务库；测试库通过 `GLOBALCARE_TEST_DATABASE_URL` 指定。网页由 FastAPI 同源提供，不需要单独启动 4173。无需为文档同步执行数据库初始化或 seed。若本机 `NO_PROXY` 含带方括号的 IPv6（如 `[::1]`），当前 `httpx2`/OpenAI 适配层会解析失败，故命令显式收紧 `NO_PROXY`。
 
 ## 安全与可靠性边界
 
@@ -125,8 +137,8 @@ git diff --check
 
 网页由 FastAPI 同源提供，http://127.0.0.1:18000/ 。私密 .env 使用 MiniMax-M3、BGE-M3/Milvus、Redis、PostgreSQL Store/checkpoint、JWT，模型和知识均禁止静默降级。网页使用 HttpOnly Cookie，回环开发票据由运行入口提供，不代表公司身份系统。
 
-M3 thinking disabled，temperature 0.1，输出 512 token、20 秒；实例上限 8、锁等待 5 秒、当前单轮配置 90 秒。分类审计记录路由、条目、来源和范围，证据审计记录后端和降级状态。
+M3 thinking disabled，temperature 0.1，输出 512 token、20 秒；实例上限 8、锁等待 5 秒、单轮代码默认 60 秒（当前 `.env` 为 90 秒）。分类审计记录路由、条目、来源和范围，证据审计记录后端和降级状态。
 
-当前目录：10 FAQ、82 意图语料、64 FAQ 问法、63 精确索引、102 答案变体；资料保留来源标记，不冒充正式品牌已审批政策。重启恢复和运行记录见 测试说明与报告.md。
+当前目录：10 FAQ、82 意图语料、64 FAQ 问法、63 精确索引、102 答案变体；15 份政策均标记 `simulated`、未 `approved`，不冒充正式品牌已审批政策。重启恢复和运行记录见 测试说明与报告.md。
 
 推荐运行脚本 live_e2e_loop.py，HTTP smoke 使用 GLOBALCARE_BASE_URL=http://127.0.0.1:18000。独立 4173 静态页不承担当前同源 JWT 接入。
